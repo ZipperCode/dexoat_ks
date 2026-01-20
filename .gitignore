@@ -1,0 +1,26 @@
+# Claude Code
+.claude/
+.spec-workflow/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Build
+*.zip
+*.tar.gz
+
+# Logs (keep template, ignore runtime)
+logs/*.log
+logs/*.log.*
+!logs/.gitkeep
+
+# Data (runtime cache)
+data/*
+!data/.gitkeep
+
+# Temporary
+*.tmp
+*.bak

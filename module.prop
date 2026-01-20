@@ -1,0 +1,6 @@
+id=dexoat_ks
+name=Dex2Oat Manager
+version=1.0
+versionCode=1
+author=Zipper
+description=WebUI for managing app dex2oat compilation with scheduling, smart detection, and comprehensive logging

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dex2Oat Manager</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ Dex2Oat Manager</h1>
+            <p class="subtitle">Manage app compilation with ease</p>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab active" data-tab="dashboard">Dashboard</button>
+            <button class="tab" data-tab="apps">Apps</button>
+            <button class="tab" data-tab="schedule">Schedule</button>
+            <button class="tab" data-tab="config">Config</button>
+            <button class="tab" data-tab="logs">Logs</button>
+        </nav>
+
+        <main>
+            <!-- Dashboard Tab -->
+            <section id="dashboard" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📱</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="total-apps">-</div>
+                            <div class="stat-label">Total Apps</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="compiled-apps">-</div>
+                            <div class="stat-label">Compiled</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⚠️</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="needs-recompile">-</div>
+                            <div class="stat-label">Needs Recompile</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏳</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="pending-apps">-</div>
+                            <div class="stat-label">Pending</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="refresh-dashboard" class="btn btn-secondary">Refresh</button>
+                    <button id="compile-all" class="btn btn-primary">Compile All</button>
+                </div>
+
+                <div class="info-card">
+                    <h3>Scheduler Status</h3>
+                    <p><strong>Schedule:</strong> <span id="schedule-display">Not configured</span></p>
+                    <p><strong>Status:</strong> <span id="scheduler-status">Checking...</span></p>
+                </div>
+            </section>
+
+            <!-- Apps Tab -->
+            <section id="apps" class="tab-content">
+                <div class="toolbar">
+                    <input type="text" id="search-apps" placeholder="Search apps...">
+                    <select id="filter-apps">
+                        <option value="all">All Apps</option>
+                        <option value="user">User Apps Only</option>
+                        <option value="system">System Apps Only</option>
+                        <option value="compiled">Compiled Only</option>
+                        <option value="uncompiled">Uncompiled Only</option>
+                        <option value="needs-recompile">Needs Recompile</option>
+                    </select>
+                    <select id="page-size">
+                        <option value="20">20 per page</option>
+                        <option value="50" selected>50 per page</option>
+                        <option value="100">100 per page</option>
+                    </select>
+                    <button id="refresh-apps" class="btn btn-secondary">Refresh</button>
+                </div>
+
+                <div class="select-all-bar">
+                    <input type="checkbox" id="select-all-apps">
+                    <label for="select-all-apps">Select All (Page)</label>
+                    <button id="compile-selected" class="btn btn-primary btn-sm">Compile Selected</button>
+                    <span id="selection-count" style="margin-left: auto; color: var(--text-secondary);"></span>
+                </div>
+
+                <div id="apps-list" class="apps-list">
+                    <p class="loading">Loading apps...</p>
+                </div>
+
+                <div class="pagination">
+                    <button id="prev-page" class="btn btn-sm btn-secondary" disabled>Previous</button>
+                    <span id="page-info">Page 1 of 1</span>
+                    <button id="next-page" class="btn btn-sm btn-secondary" disabled>Next</button>
+                </div>
+            </section>
+
+            <!-- Schedule Tab -->
+            <section id="schedule" class="tab-content">
+                <div class="card">
+                    <h2>Scheduled Compilation</h2>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="schedule-enabled">
+                            Enable Scheduling
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="schedule-cron">Cron Expression</label>
+                        <input type="text" id="schedule-cron" placeholder="0 2 * * *" value="0 2 * * *">
+                        <small>Format: minute hour day month weekday (e.g., "0 2 * * *" = Daily at 2 AM)</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Next Run Time</label>
+                        <p id="next-run-time">-</p>
+                    </div>
+
+                    <button id="save-schedule" class="btn btn-primary">Save Schedule</button>
+                    <button id="trigger-now" class="btn btn-secondary">Trigger Now</button>
+                </div>
+            </section>
+
+            <!-- Config Tab -->
+            <section id="config" class="tab-content">
+                <div class="card">
+                    <h2>Configuration</h2>
+
+                    <div class="form-group">
+                        <label for="default-mode">Default Compilation Mode</label>
+                        <select id="default-mode">
+                            <option value="speed">Speed (balanced)</option>
+                            <option value="verify">Verify (fastest)</option>
+                            <option value="speed-profile">Speed Profile (optimized)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="skip-compiled">
+                            Skip Already Compiled Apps
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="detect-mode-reset">
+                            Detect Mode Reset After Updates
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="compile-on-boot">
+                            Compile on Boot (Recommended)
+                        </label>
+                        <small>Automatically compile apps when device starts up</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="log-level">Log Level</label>
+                        <select id="log-level">
+                            <option value="DEBUG">Debug</option>
+                            <option value="INFO">Info</option>
+                            <option value="WARN">Warning</option>
+                            <option value="ERROR">Error</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="parallel-jobs">Parallel Jobs</label>
+                        <input type="number" id="parallel-jobs" min="1" max="5" value="2">
+                    </div>
+
+                    <button id="save-config" class="btn btn-primary">Save Config</button>
+                    <button id="reset-config" class="btn btn-secondary">Reset to Defaults</button>
+                </div>
+
+                <div class="card">
+                    <h2>Advanced Actions</h2>
+                    <button id="un-compile-all" class="btn btn-danger">Un-compile All Apps</button>
+                </div>
+            </section>
+
+            <!-- Logs Tab -->
+            <section id="logs" class="tab-content">
+                <div class="toolbar">
+                    <select id="log-level-filter">
+                        <option value="all">All Levels</option>
+                        <option value="ERROR">Errors Only</option>
+                        <option value="WARN">Warnings & Errors</option>
+                        <option value="INFO">Info & Above</option>
+                    </select>
+                    <button id="refresh-logs" class="btn btn-secondary">Refresh</button>
+                    <button id="download-logs" class="btn btn-secondary">Download</button>
+                    <button id="clear-logs" class="btn btn-danger">Clear Logs</button>
+                </div>
+
+                <div class="logs-container">
+                    <pre id="logs-content">Loading logs...</pre>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script type="module">
+        import { exec } from 'https://cdn.jsdelivr.net/npm/kernelsu@latest/index.js';
+        window.exec = exec;
+    </script>
+    <script src="js/app.js"></script>
+</body>
+</html>
