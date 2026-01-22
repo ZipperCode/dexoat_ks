@@ -10,7 +10,7 @@ const LOGS_DIR = `${MODULE_DIR}/logs`;
 // Global state
 let allApps = [];
 let filteredApps = [];
-let 已选择Apps = new Set();
+let selectedApps = new Set();
 let currentTab = 'dashboard';
 let currentPage = 1;
 let pageSize = 50;
@@ -110,6 +110,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
         const tabName = tab.dataset.tab;
 
+        // Update UI immediately for instant feedback
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
 
@@ -120,50 +121,48 @@ document.querySelectorAll('.tab').forEach(tab => {
 
         currentTab = tabName;
 
-        const now = Date.now();
+        // Load data asynchronously after UI update
+        // Use setTimeout to allow the browser to render the tab switch first
+        setTimeout(() => {
+            const now = Date.now();
 
-        // Lazy load tab data - only load if not loaded yet
-        // First time: load immediately, subsequent times: load in background if enough time passed
-        if (tabName === 'dashboard') {
-            if (!tabLoaded.dashboard) {
-                loadDashboard();
-            } else if (!tabLoading.dashboard && (now - tabLoadTime.dashboard > BACKGROUND_REFRESH_INTERVAL)) {
-                // Background refresh only if 30 seconds have passed
-                loadDashboard(true);
+            // Lazy load tab data - only load if not loaded yet
+            if (tabName === 'dashboard') {
+                if (!tabLoaded.dashboard) {
+                    loadDashboard(false);
+                } else if (!tabLoading.dashboard && (now - tabLoadTime.dashboard > BACKGROUND_REFRESH_INTERVAL)) {
+                    loadDashboard(true);
+                }
             }
-        }
-        if (tabName === 'apps') {
-            if (!tabLoaded.apps) {
-                loadApps();
-            } else if (!tabLoading.apps && (now - tabLoadTime.apps > BACKGROUND_REFRESH_INTERVAL)) {
-                // Background refresh only if 30 seconds have passed
-                loadApps(true);
+            if (tabName === 'apps') {
+                if (!tabLoaded.apps) {
+                    loadApps(false);
+                } else if (!tabLoading.apps && (now - tabLoadTime.apps > BACKGROUND_REFRESH_INTERVAL)) {
+                    loadApps(true);
+                }
             }
-        }
-        if (tabName === 'schedule') {
-            if (!tabLoaded.schedule) {
-                loadSchedule();
-            } else if (!tabLoading.schedule && (now - tabLoadTime.schedule > BACKGROUND_REFRESH_INTERVAL)) {
-                // Background refresh only if 30 seconds have passed
-                loadSchedule(true);
+            if (tabName === 'schedule') {
+                if (!tabLoaded.schedule) {
+                    loadSchedule(false);
+                } else if (!tabLoading.schedule && (now - tabLoadTime.schedule > BACKGROUND_REFRESH_INTERVAL)) {
+                    loadSchedule(true);
+                }
             }
-        }
-        if (tabName === 'config') {
-            if (!tabLoaded.config) {
-                loadConfig();
-            } else if (!tabLoading.config && (now - tabLoadTime.config > BACKGROUND_REFRESH_INTERVAL)) {
-                // Background refresh only if 30 seconds have passed
-                loadConfig(true);
+            if (tabName === 'config') {
+                if (!tabLoaded.config) {
+                    loadConfig(false);
+                } else if (!tabLoading.config && (now - tabLoadTime.config > BACKGROUND_REFRESH_INTERVAL)) {
+                    loadConfig(true);
+                }
             }
-        }
-        if (tabName === 'logs') {
-            if (!tabLoaded.logs) {
-                loadLogs();
-            } else if (!tabLoading.logs && (now - tabLoadTime.logs > BACKGROUND_REFRESH_INTERVAL)) {
-                // Background refresh only if 30 seconds have passed
-                loadLogs(true);
+            if (tabName === 'logs') {
+                if (!tabLoaded.logs) {
+                    loadLogs(false);
+                } else if (!tabLoading.logs && (now - tabLoadTime.logs > BACKGROUND_REFRESH_INTERVAL)) {
+                    loadLogs(true);
+                }
             }
-        }
+        }, 0);
     });
 });
 
@@ -174,11 +173,17 @@ async function loadDashboard(background = false) {
     tabLoading.dashboard = true;
 
     try {
+        // Show loading state immediately for better UX
         if (!background) {
-            document.getElementById('total-apps').textContent = '...';
-            document.getElementById('compiled-apps').textContent = '...';
-            document.getElementById('needs-recompile').textContent = '...';
-            document.getElementById('pending-apps').textContent = '...';
+            const totalAppsEl = document.getElementById('total-apps');
+            const compiledAppsEl = document.getElementById('compiled-apps');
+            const needsRecompileEl = document.getElementById('needs-recompile');
+            const pendingAppsEl = document.getElementById('pending-apps');
+
+            if (totalAppsEl) totalAppsEl.textContent = '...';
+            if (compiledAppsEl) compiledAppsEl.textContent = '...';
+            if (needsRecompileEl) needsRecompileEl.textContent = '...';
+            if (pendingAppsEl) pendingAppsEl.textContent = '...';
         }
 
         const result = await execCommand(`sh ${SCRIPTS_DIR}/get_apps.sh`);
@@ -208,14 +213,20 @@ async function loadDashboard(background = false) {
 
         // Update stats
         const total = allApps.length;
-        const compiled = allApps.filter(a => a.is编译d === true || a.is编译d === 'true').length;
+        const compiled = allApps.filter(a => a.isCompiled === true || a.isCompiled === 'true').length;
         const needsRecompile = allApps.filter(a => a.needsRecompile === true || a.needsRecompile === 'true').length;
         const pending = total - compiled;
 
-        document.getElementById('total-apps').textContent = total;
-        document.getElementById('compiled-apps').textContent = compiled;
-        document.getElementById('needs-recompile').textContent = needsRecompile;
-        document.getElementById('pending-apps').textContent = pending;
+        // Update DOM with actual values
+        const totalAppsEl = document.getElementById('total-apps');
+        const compiledAppsEl = document.getElementById('compiled-apps');
+        const needsRecompileEl = document.getElementById('needs-recompile');
+        const pendingAppsEl = document.getElementById('pending-apps');
+
+        if (totalAppsEl) totalAppsEl.textContent = total;
+        if (compiledAppsEl) compiledAppsEl.textContent = compiled;
+        if (needsRecompileEl) needsRecompileEl.textContent = needsRecompile;
+        if (pendingAppsEl) pendingAppsEl.textContent = pending;
 
         await loadScheduleInfo(background);
 
@@ -355,10 +366,10 @@ function filterAndRenderApps() {
             filteredApps = filteredApps.filter(app => app.isSystem === true || app.isSystem === 'true');
             break;
         case 'compiled':
-            filteredApps = filteredApps.filter(app => app.is编译d === true || app.is编译d === 'true');
+            filteredApps = filteredApps.filter(app => app.isCompiled === true || app.isCompiled === 'true');
             break;
         case 'uncompiled':
-            filteredApps = filteredApps.filter(app => app.is编译d === false || app.is编译d === 'false');
+            filteredApps = filteredApps.filter(app => app.isCompiled === false || app.isCompiled === 'false');
             break;
         case 'needs-recompile':
             filteredApps = filteredApps.filter(app => app.needsRecompile === true || app.needsRecompile === 'true');
@@ -390,17 +401,17 @@ function renderAppsList(appsToRender) {
     }
 
     container.innerHTML = appsToRender.map(app => `
-        <div class="app-card ${已选择Apps.has(app.packageName) ? '已选择' : ''}">
+        <div class="app-card ${selectedApps.has(app.packageName) ? 'selected' : ''}">
             <input type="checkbox"
                    class="app-checkbox"
                    data-package="${app.packageName}"
-                   ${已选择Apps.has(app.packageName) ? 'checked' : ''}>
+                   ${selectedApps.has(app.packageName) ? 'checked' : ''}>
             <div class="app-icon">📱</div>
             <div class="app-info">
                 <div class="app-name">${escapeHtml(app.packageName)}</div>
             </div>
             <div class="app-status">
-                ${状态徽章(app)}
+                ${getStatusBadge(app)}
             </div>
             <div class="app-actions">
                 <button class="btn btn-sm btn-secondary"
@@ -416,31 +427,31 @@ function renderAppsList(appsToRender) {
         checkbox.addEventListener('change', (e) => {
             const package = e.target.dataset.package;
             if (e.target.checked) {
-                已选择Apps.add(package);
+                selectedApps.add(package);
             } else {
-                已选择Apps.delete(package);
+                selectedApps.delete(package);
             }
             updateSelectionCount();
         });
     });
 }
 
-function 状态徽章(app) {
-    const is编译d = app.is编译d === true || app.is编译d === 'true';
+function getStatusBadge(app) {
+    const isCompiled = app.isCompiled === true || app.isCompiled === 'true';
     const needsRecompile = app.needsRecompile === true || app.needsRecompile === 'true';
     const compileMode = app.compileMode || 'none';
 
     if (needsRecompile) {
         return '<span class="status-badge status-needs-recompile">Needs Recompile</span>';
     }
-    if (is编译d) {
+    if (isCompiled) {
         // Show compilation mode with badge
-        return `<span class="status-badge status-compiled">${get编译ModeLabel(compileMode)}</span>`;
+        return `<span class="status-badge status-compiled">${getCompileModeLabel(compileMode)}</span>`;
     }
     return '<span class="status-badge status-uncompiled">Uncompiled</span>';
 }
 
-function get编译ModeLabel(mode) {
+function getCompileModeLabel(mode) {
     const modeLabels = {
         'speed': 'Speed ⚡',
         'verify': 'Verify ✓',
@@ -463,7 +474,7 @@ function updatePagination() {
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
 
-    if (pageInfo) pageInfo.textContent = `第 .* 页，共 .* 页
+    if (pageInfo) pageInfo.textContent = `第 ${currentPage} 页，共 ${totalPages} 页`;
     if (prevBtn) prevBtn.disabled = currentPage <= 1;
     if (nextBtn) nextBtn.disabled = currentPage >= (totalPages || 1);
 }
@@ -471,7 +482,7 @@ function updatePagination() {
 function updateSelectionCount() {
     const countEl = document.getElementById('selection-count');
     if (countEl) {
-        countEl.textContent = `${已选择Apps.size} 已选择`;
+        countEl.textContent = `${selectedApps.size} 已选择`;
     }
 }
 
@@ -515,9 +526,9 @@ document.getElementById('select-all-apps')?.addEventListener('change', (e) => {
 
     pageApps.forEach(app => {
         if (e.target.checked) {
-            已选择Apps.add(app.packageName);
+            selectedApps.add(app.packageName);
         } else {
-            已选择Apps.delete(app.packageName);
+            selectedApps.delete(app.packageName);
         }
     });
 
@@ -541,14 +552,14 @@ window.compileApp = async function(packageName, mode) {
     }
 };
 
-// 编译 已选择
-document.getElementById('compile-已选择')?.addEventListener('click', async () => {
-    if (已选择Apps.size === 0) {
+// 编译 selected
+document.getElementById('compile-selected')?.addEventListener('click', async () => {
+    if (selectedApps.size === 0) {
         showToast('未选择应用');
         return;
     }
 
-    if (!confirm(`编译 ${已选择Apps.size} 已选择 apps?`)) {
+    if (!confirm(`编译 ${selectedApps.size} 已选择 apps?`)) {
         return;
     }
 
@@ -558,7 +569,7 @@ document.getElementById('compile-已选择')?.addEventListener('click', async ()
     let compiled = 0;
     let failed = 0;
 
-    for (const package of 已选择Apps) {
+    for (const package of selectedApps) {
         const result = await execCommand(`sh ${SCRIPTS_DIR}/compile_app.sh '${package}' '${defaultMode}'`);
         if (result.errno === 0) {
             compiled++;
@@ -568,7 +579,7 @@ document.getElementById('compile-已选择')?.addEventListener('click', async ()
     }
 
     showToast(`已编译: ${compiled}, 失败: ${failed}`);
-    已选择Apps.clear();
+    selectedApps.clear();
     updateSelectionCount();
 });
 
@@ -672,14 +683,14 @@ async function loadConfig(background = false) {
             const lines = result.stdout.split('\n');
 
             const defaultMode = lines.find(l => l.startsWith('default_mode='))?.split('=')[1] || 'speed';
-            const skip编译d = lines.find(l => l.startsWith('skip_compiled='))?.split('=')[1] || 'true';
+            const skipCompiled = lines.find(l => l.startsWith('skip_compiled='))?.split('=')[1] || 'true';
             const detectModeReset = lines.find(l => l.startsWith('detect_mode_reset='))?.split('=')[1] || 'true';
             const compileOnBoot = lines.find(l => l.startsWith('compile_on_boot='))?.split('=')[1] || 'true';
             const logLevel = lines.find(l => l.startsWith('log_level='))?.split('=')[1] || 'INFO';
             const parallelJobs = lines.find(l => l.startsWith('parallel_jobs='))?.split('=')[1] || '2';
 
             document.getElementById('default-mode').value = defaultMode;
-            document.getElementById('skip-compiled').checked = skip编译d === 'true';
+            document.getElementById('skip-compiled').checked = skipCompiled === 'true';
             document.getElementById('detect-mode-reset').checked = detectModeReset === 'true';
             document.getElementById('compile-on-boot').checked = compileOnBoot === 'true';
             document.getElementById('log-level').value = logLevel;
@@ -699,14 +710,14 @@ async function loadConfig(background = false) {
 
 document.getElementById('save-config')?.addEventListener('click', async () => {
     const defaultMode = document.getElementById('default-mode')?.value || 'speed';
-    const skip编译d = document.getElementById('skip-compiled')?.checked;
+    const skipCompiled = document.getElementById('skip-compiled')?.checked;
     const detectModeReset = document.getElementById('detect-mode-reset')?.checked;
     const compileOnBoot = document.getElementById('compile-on-boot')?.checked;
     const logLevel = document.getElementById('log-level')?.value || 'INFO';
     const parallelJobs = document.getElementById('parallel-jobs')?.value || '2';
 
     await execCommand(`sed -i 's/^default_mode=.*/default_mode=${defaultMode}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^skip_compiled=.*/skip_compiled=${skip编译d}/' ${CONFIGS_DIR}/dexoat.conf`);
+    await execCommand(`sed -i 's/^skip_compiled=.*/skip_compiled=${skipCompiled}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^detect_mode_reset=.*/detect_mode_reset=${detectModeReset}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^compile_on_boot=.*/compile_on_boot=${compileOnBoot}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^log_level=.*/log_level=${logLevel}/' ${CONFIGS_DIR}/dexoat.conf`);
@@ -828,7 +839,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.exec && typeof window.exec === 'function') {
         execAvailable = true;
         logDebug('exec function is available');
-        loadDashboard();
+
+        // Load dashboard data asynchronously after a short delay
+        // This allows the UI to render first, then load data in background
+        setTimeout(() => {
+            logDebug('Starting initial dashboard data load');
+            loadDashboard(false);
+        }, 100);
     } else {
         logError('exec function not available - KernelSU API may not be loaded');
         showToast('KernelSU API not available');

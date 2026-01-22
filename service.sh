@@ -1,6 +1,11 @@
 #!/system/bin/sh
-# Dex2Oat Manager Service Script
-# Runs on module boot to initialize logging, scheduling, and optional boot compilation
+# Dex2Oat Manager
+# 在模块启动时运行，用于初始化日志记录、调度和可选的启动编译
+
+# 使用KernelSU的busybox
+export PATH="/data/adb/ksu/bin/busybox:$PATH"
+# 设置ASH_STANDALONE模式以确保使用完整的BusyBox功能
+export ASH_STANDALONE=1
 
 MODULE_DIR="/data/adb/modules/dexoat_ks"
 SCRIPT_DIR="$MODULE_DIR/scripts"
