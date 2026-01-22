@@ -1,23 +1,23 @@
 #!/system/bin/sh
-# List all apps with compilation status - SIMPLIFIED & OPTIMIZED
-# Output: JSON format
+# 列出所有应用及其编译状态 - 优化版
+# 输出格式: JSON
 
 CONFIG_FILE="/data/adb/modules/dexoat_ks/configs/dexoat.conf"
 
-# Get settings
+# 获取配置
 DEFAULT_MODE=$(grep "^default_mode=" "$CONFIG_FILE" 2>/dev/null | cut -d'=' -f2)
 [ -z "$DEFAULT_MODE" ] && DEFAULT_MODE="speed"
 
-# Start JSON
+# 开始 JSON 输出
 echo '{"apps":['
 
-# Get only user apps (faster)
+# 仅获取用户应用（更快）
 FIRST=true
 pm list packages -3 2>/dev/null | while read -r package_line; do
   package=$(echo "$package_line" | sed 's/package://')
   [ -z "$package" ] && continue
 
-  # Default values
+  # 默认值
   is_system="false"
   label="$package"
   current_mode="none"
@@ -26,25 +26,28 @@ pm list packages -3 2>/dev/null | while read -r package_line; do
   needs_recompile="false"
   compile_time=""
 
-  # Quick check: does package have odex files?
-  # Use pm path to get APK location
+  # 获取 APK 路径
   apk_path=$(pm path "$package" 2>/dev/null | head -1 | cut -d: -f2)
 
-  if [ -n "$apk_path" ]; then
-    # Check for oat directory (contains compiled code)
+  if [ -n "$apk_path" ] && [ -f "$apk_path" ]; then
+    # 检查 oat 目录（包含编译后的代码）
     oat_dir="${apk_path%/*}/oat"
 
+    # 快速检查：测试 oat 目录是否存在
     if [ -d "$oat_dir" ]; then
-      # Check if any odex/vdex files exist
-      if ls "$oat_dir"/*/*.odex >/dev/null 2>&1 || ls "$oat_dir"/*/*.vdex >/dev/null 2>&1; then
+      # 使用 ls 配合通配符检查文件（抑制错误，比 find 更快）
+      # 检查是否存在任何 .odex 或 .vdex 文件
+      odex_files=$(ls "$oat_dir"/*/*.odex 2>/dev/null | head -1)
+      vdex_files=$(ls "$oat_dir"/*/*.vdex 2>/dev/null | head -1)
+
+      if [ -n "$odex_files" ] || [ -n "$vdex_files" ]; then
         is_compiled="true"
-        # Assume speed mode if compiled
-        current_mode="speed"
+        current_mode="speed"  # 简化检测（准确检测需要 oatdump，较慢）
       fi
     fi
   fi
 
-  # Output JSON entry
+  # 输出 JSON 条目
   if [ "$FIRST" = "true" ]; then
     FIRST=false
   else

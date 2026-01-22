@@ -10,12 +10,42 @@ const LOGS_DIR = `${MODULE_DIR}/logs`;
 // Global state
 let allApps = [];
 let filteredApps = [];
-let selectedApps = new Set();
+let 已选择Apps = new Set();
 let currentTab = 'dashboard';
 let currentPage = 1;
 let pageSize = 50;
 let isLoading = false;
 let execAvailable = false;
+
+// Track loaded state for each tab
+let tabLoaded = {
+    dashboard: false,
+    apps: false,
+    schedule: false,
+    config: false,
+    logs: false
+};
+
+// Track loading state to prevent concurrent loads
+let tabLoading = {
+    dashboard: false,
+    apps: false,
+    schedule: false,
+    config: false,
+    logs: false
+};
+
+// Track last load time for each tab (to avoid too frequent refresh)
+let tabLoadTime = {
+    dashboard: 0,
+    apps: 0,
+    schedule: 0,
+    config: 0,
+    logs: 0
+};
+
+// Minimum time between background refreshes (30 seconds)
+const BACKGROUND_REFRESH_INTERVAL = 30000;
 
 // Utility functions
 function showToast(message, duration = 3000) {
@@ -36,7 +66,7 @@ function logDebug(message) {
 }
 
 function logError(message) {
-    console.error(`[ERROR] ${message}`);
+    console.error(`[错误] ${message}`);
     showToast(message);
 }
 
@@ -90,34 +120,78 @@ document.querySelectorAll('.tab').forEach(tab => {
 
         currentTab = tabName;
 
-        // Lazy load tab data
-        if (tabName === 'dashboard') loadDashboard();
-        if (tabName === 'apps') loadApps();
-        if (tabName === 'schedule') loadSchedule();
-        if (tabName === 'config') loadConfig();
-        if (tabName === 'logs') loadLogs();
+        const now = Date.now();
+
+        // Lazy load tab data - only load if not loaded yet
+        // First time: load immediately, subsequent times: load in background if enough time passed
+        if (tabName === 'dashboard') {
+            if (!tabLoaded.dashboard) {
+                loadDashboard();
+            } else if (!tabLoading.dashboard && (now - tabLoadTime.dashboard > BACKGROUND_REFRESH_INTERVAL)) {
+                // Background refresh only if 30 seconds have passed
+                loadDashboard(true);
+            }
+        }
+        if (tabName === 'apps') {
+            if (!tabLoaded.apps) {
+                loadApps();
+            } else if (!tabLoading.apps && (now - tabLoadTime.apps > BACKGROUND_REFRESH_INTERVAL)) {
+                // Background refresh only if 30 seconds have passed
+                loadApps(true);
+            }
+        }
+        if (tabName === 'schedule') {
+            if (!tabLoaded.schedule) {
+                loadSchedule();
+            } else if (!tabLoading.schedule && (now - tabLoadTime.schedule > BACKGROUND_REFRESH_INTERVAL)) {
+                // Background refresh only if 30 seconds have passed
+                loadSchedule(true);
+            }
+        }
+        if (tabName === 'config') {
+            if (!tabLoaded.config) {
+                loadConfig();
+            } else if (!tabLoading.config && (now - tabLoadTime.config > BACKGROUND_REFRESH_INTERVAL)) {
+                // Background refresh only if 30 seconds have passed
+                loadConfig(true);
+            }
+        }
+        if (tabName === 'logs') {
+            if (!tabLoaded.logs) {
+                loadLogs();
+            } else if (!tabLoading.logs && (now - tabLoadTime.logs > BACKGROUND_REFRESH_INTERVAL)) {
+                // Background refresh only if 30 seconds have passed
+                loadLogs(true);
+            }
+        }
     });
 });
 
 // Dashboard functions
-async function loadDashboard() {
+async function loadDashboard(background = false) {
+    // Prevent concurrent loads
+    if (tabLoading.dashboard) return;
+    tabLoading.dashboard = true;
+
     try {
-        document.getElementById('total-apps').textContent = '...';
-        document.getElementById('compiled-apps').textContent = '...';
-        document.getElementById('needs-recompile').textContent = '...';
-        document.getElementById('pending-apps').textContent = '...';
+        if (!background) {
+            document.getElementById('total-apps').textContent = '...';
+            document.getElementById('compiled-apps').textContent = '...';
+            document.getElementById('needs-recompile').textContent = '...';
+            document.getElementById('pending-apps').textContent = '...';
+        }
 
         const result = await execCommand(`sh ${SCRIPTS_DIR}/get_apps.sh`);
 
-        logDebug(`get_apps.sh result: errno=${result.errno}, stdout length=${result.stdout?.length || 0}`);
+        logDebug(`get_apps.sh 结果: 错误码=${result.errno}, 输出长度=${result.stdout?.length || 0}`);
 
         if (result.errno !== 0) {
-            logError('Failed to load dashboard data');
+            if (!background) logError('加载仪表盘数据失败');
             return;
         }
 
         if (!result.stdout || result.stdout.trim() === '') {
-            logError('Empty response from get_apps.sh');
+            if (!background) logError('get_apps.sh 返回空响应');
             return;
         }
 
@@ -125,8 +199,8 @@ async function loadDashboard() {
         try {
             data = JSON.parse(result.stdout);
         } catch (e) {
-            logError(`JSON parse error: ${e.message}`);
-            logDebug(`Response: ${result.stdout.substring(0, 200)}...`);
+            if (!background) logError(`JSON 解析错误: ${e.message}`);
+            logDebug(`响应内容: ${result.stdout.substring(0, 200)}...`);
             return;
         }
 
@@ -134,7 +208,7 @@ async function loadDashboard() {
 
         // Update stats
         const total = allApps.length;
-        const compiled = allApps.filter(a => a.isCompiled === true || a.isCompiled === 'true').length;
+        const compiled = allApps.filter(a => a.is编译d === true || a.is编译d === 'true').length;
         const needsRecompile = allApps.filter(a => a.needsRecompile === true || a.needsRecompile === 'true').length;
         const pending = total - compiled;
 
@@ -143,15 +217,23 @@ async function loadDashboard() {
         document.getElementById('needs-recompile').textContent = needsRecompile;
         document.getElementById('pending-apps').textContent = pending;
 
-        await loadScheduleInfo();
+        await loadScheduleInfo(background);
 
-        logDebug(`Dashboard loaded: ${total} apps`);
+        tabLoaded.dashboard = true;
+        tabLoadTime.dashboard = Date.now();
+        logDebug(`仪表盘已加载: ${total} 个应用`);
+
+        if (background) {
+            logDebug('仪表盘数据已在后台刷新');
+        }
     } catch (error) {
-        logError(`Error loading dashboard: ${error.message}`);
+        if (!background) logError(`加载仪表盘时出错: ${error.message}`);
+    } finally {
+        tabLoading.dashboard = false;
     }
 }
 
-async function loadScheduleInfo() {
+async function loadScheduleInfo(background = false) {
     try {
         const result = await execCommand(`cat ${CONFIGS_DIR}/dexoat.conf`);
         if (result.errno === 0) {
@@ -169,19 +251,26 @@ async function loadScheduleInfo() {
             if (schedulerStatus) schedulerStatus.textContent = enabled === 'true' ? 'Running' : 'Disabled';
         }
     } catch (error) {
-        logError(`Error loading schedule info: ${error.message}`);
+        if (!background) logError(`加载错误 schedule info: ${error.message}`);
     }
 }
 
 // Apps functions with pagination
-async function loadApps() {
-    if (isLoading) return;
-    isLoading = true;
+async function loadApps(background = false) {
+    // Prevent concurrent loads
+    if (tabLoading.apps) return;
+    tabLoading.apps = true;
+
+    // If background and current tab is not apps, skip
+    if (background && currentTab !== 'apps') {
+        tabLoading.apps = false;
+        return;
+    }
 
     try {
         const container = document.getElementById('apps-list');
-        if (container) {
-            container.innerHTML = '<p class="loading">Loading apps (this may take a moment)...</p>';
+        if (container && !background) {
+            container.innerHTML = '<p class="loading">加载应用中 (this may take a moment)...</p>';
         }
 
         const result = await execCommand(`sh ${SCRIPTS_DIR}/get_apps.sh`);
@@ -189,18 +278,18 @@ async function loadApps() {
         logDebug(`loadApps result: errno=${result.errno}`);
 
         if (result.errno !== 0) {
-            if (container) {
-                container.innerHTML = `<p class="loading" style="color: var(--danger-color)">Failed to load apps<br><small>${result.stderr || 'Unknown error'}</small></p>`;
+            if (container && !background) {
+                container.innerHTML = `<p class="loading" style="color: var(--danger-color)">加载应用失败<br><small>${result.stderr || 'Unknown error'}</small></p>`;
             }
-            isLoading = false;
+            tabLoading.apps = false;
             return;
         }
 
         if (!result.stdout || result.stdout.trim() === '') {
-            if (container) {
-                container.innerHTML = '<p class="loading">No data received from server</p>';
+            if (container && !background) {
+                container.innerHTML = '<p class="loading">未收到服务器数据</p>';
             }
-            isLoading = false;
+            tabLoading.apps = false;
             return;
         }
 
@@ -208,28 +297,40 @@ async function loadApps() {
         try {
             data = JSON.parse(result.stdout);
         } catch (e) {
-            logError(`JSON parse error: ${e.message}`);
-            logDebug(`Response: ${result.stdout.substring(0, 500)}...`);
-            if (container) {
-                container.innerHTML = `<p class="loading" style="color: var(--danger-color)">Failed to parse app data<br><small>${e.message}</small></p>`;
+            if (!background) {
+                logError(`JSON parse error: ${e.message}`);
+                logDebug(`响应: ${result.stdout.substring(0, 500)}...`);
+                if (container) {
+                    container.innerHTML = `<p class="loading" style="color: var(--danger-color)">解析应用数据失败<br><small>${e.message}</small></p>`;
+                }
             }
-            isLoading = false;
+            tabLoading.apps = false;
             return;
         }
 
         allApps = data.apps || [];
 
-        showToast(`Loaded ${allApps.length} apps`);
-        logDebug(`Loaded ${allApps.length} apps`);
+        if (!background) {
+            showToast(`已加载 ${allApps.length} 个应用`);
+        }
+        logDebug(`已加载 ${allApps.length} 个应用`);
 
         filterAndRenderApps();
+        tabLoaded.apps = true;
+        tabLoadTime.apps = Date.now();
+
+        if (background) {
+            logDebug('应用数据已在后台刷新');
+        }
     } catch (error) {
-        logError(`Error loading apps: ${error.message}`);
-        if (document.getElementById('apps-list')) {
-            document.getElementById('apps-list').innerHTML = `<p class="loading" style="color: var(--danger-color)">Error: ${error.message}</p>`;
+        if (!background) {
+            logError(`加载应用时出错: ${error.message}`);
+            if (document.getElementById('apps-list')) {
+                document.getElementById('apps-list').innerHTML = `<p class="loading" style="color: var(--danger-color)">错误: ${error.message}</p>`;
+            }
         }
     } finally {
-        isLoading = false;
+        tabLoading.apps = false;
     }
 }
 
@@ -254,10 +355,10 @@ function filterAndRenderApps() {
             filteredApps = filteredApps.filter(app => app.isSystem === true || app.isSystem === 'true');
             break;
         case 'compiled':
-            filteredApps = filteredApps.filter(app => app.isCompiled === true || app.isCompiled === 'true');
+            filteredApps = filteredApps.filter(app => app.is编译d === true || app.is编译d === 'true');
             break;
         case 'uncompiled':
-            filteredApps = filteredApps.filter(app => app.isCompiled === false || app.isCompiled === 'false');
+            filteredApps = filteredApps.filter(app => app.is编译d === false || app.is编译d === 'false');
             break;
         case 'needs-recompile':
             filteredApps = filteredApps.filter(app => app.needsRecompile === true || app.needsRecompile === 'true');
@@ -284,27 +385,27 @@ function renderAppsList(appsToRender) {
     if (!container) return;
 
     if (appsToRender.length === 0) {
-        container.innerHTML = '<p class="loading">No apps found</p>';
+        container.innerHTML = '<p class="loading">未找到应用</p>';
         return;
     }
 
     container.innerHTML = appsToRender.map(app => `
-        <div class="app-card ${selectedApps.has(app.packageName) ? 'selected' : ''}">
+        <div class="app-card ${已选择Apps.has(app.packageName) ? '已选择' : ''}">
             <input type="checkbox"
                    class="app-checkbox"
                    data-package="${app.packageName}"
-                   ${selectedApps.has(app.packageName) ? 'checked' : ''}>
+                   ${已选择Apps.has(app.packageName) ? 'checked' : ''}>
             <div class="app-icon">📱</div>
             <div class="app-info">
                 <div class="app-name">${escapeHtml(app.packageName)}</div>
             </div>
             <div class="app-status">
-                ${getStatusBadge(app)}
+                ${状态徽章(app)}
             </div>
             <div class="app-actions">
                 <button class="btn btn-sm btn-secondary"
                         onclick="window.compileApp('${app.packageName}', '${app.desiredMode}')">
-                    Compile
+                    编译
                 </button>
             </div>
         </div>
@@ -315,26 +416,39 @@ function renderAppsList(appsToRender) {
         checkbox.addEventListener('change', (e) => {
             const package = e.target.dataset.package;
             if (e.target.checked) {
-                selectedApps.add(package);
+                已选择Apps.add(package);
             } else {
-                selectedApps.delete(package);
+                已选择Apps.delete(package);
             }
             updateSelectionCount();
         });
     });
 }
 
-function getStatusBadge(app) {
-    const isCompiled = app.isCompiled === true || app.isCompiled === 'true';
+function 状态徽章(app) {
+    const is编译d = app.is编译d === true || app.is编译d === 'true';
     const needsRecompile = app.needsRecompile === true || app.needsRecompile === 'true';
+    const compileMode = app.compileMode || 'none';
 
     if (needsRecompile) {
         return '<span class="status-badge status-needs-recompile">Needs Recompile</span>';
     }
-    if (isCompiled) {
-        return '<span class="status-badge status-compiled">Compiled</span>';
+    if (is编译d) {
+        // Show compilation mode with badge
+        return `<span class="status-badge status-compiled">${get编译ModeLabel(compileMode)}</span>`;
     }
     return '<span class="status-badge status-uncompiled">Uncompiled</span>';
+}
+
+function get编译ModeLabel(mode) {
+    const modeLabels = {
+        'speed': 'Speed ⚡',
+        'verify': 'Verify ✓',
+        'speed-profile': 'Speed Profile 🚀',
+        'quicken': 'Quicken',
+        'everything': 'Everything'
+    };
+    return modeLabels[mode] || mode;
 }
 
 function escapeHtml(text) {
@@ -349,7 +463,7 @@ function updatePagination() {
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
 
-    if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages || 1}`;
+    if (pageInfo) pageInfo.textContent = `第 .* 页，共 .* 页
     if (prevBtn) prevBtn.disabled = currentPage <= 1;
     if (nextBtn) nextBtn.disabled = currentPage >= (totalPages || 1);
 }
@@ -357,7 +471,7 @@ function updatePagination() {
 function updateSelectionCount() {
     const countEl = document.getElementById('selection-count');
     if (countEl) {
-        countEl.textContent = `${selectedApps.size} selected`;
+        countEl.textContent = `${已选择Apps.size} 已选择`;
     }
 }
 
@@ -401,9 +515,9 @@ document.getElementById('select-all-apps')?.addEventListener('change', (e) => {
 
     pageApps.forEach(app => {
         if (e.target.checked) {
-            selectedApps.add(app.packageName);
+            已选择Apps.add(app.packageName);
         } else {
-            selectedApps.delete(app.packageName);
+            已选择Apps.delete(app.packageName);
         }
     });
 
@@ -411,7 +525,7 @@ document.getElementById('select-all-apps')?.addEventListener('change', (e) => {
     updateSelectionCount();
 });
 
-// Compile app
+// 编译 app
 window.compileApp = async function(packageName, mode) {
     showToast(`Compiling ${packageName}...`);
     logDebug(`Compiling ${packageName} with mode ${mode}`);
@@ -419,32 +533,32 @@ window.compileApp = async function(packageName, mode) {
     const result = await execCommand(`sh ${SCRIPTS_DIR}/compile_app.sh '${packageName}' '${mode}'`);
 
     if (result.errno === 0) {
-        showToast(`Successfully compiled ${packageName}`);
-        logDebug(`Compiled ${packageName} successfully`);
+        showToast(`成功编译 ${packageName}`);
+        logDebug(`编译d ${packageName} successfully`);
     } else {
-        showToast(`Failed to compile ${packageName}`);
-        logError(`Failed to compile ${packageName}: ${result.stderr || result.stdout}`);
+        showToast(`编译失败 ${packageName}`);
+        logError(`编译失败 ${packageName}: ${result.stderr || result.stdout}`);
     }
 };
 
-// Compile selected
-document.getElementById('compile-selected')?.addEventListener('click', async () => {
-    if (selectedApps.size === 0) {
-        showToast('No apps selected');
+// 编译 已选择
+document.getElementById('compile-已选择')?.addEventListener('click', async () => {
+    if (已选择Apps.size === 0) {
+        showToast('未选择应用');
         return;
     }
 
-    if (!confirm(`Compile ${selectedApps.size} selected apps?`)) {
+    if (!confirm(`编译 ${已选择Apps.size} 已选择 apps?`)) {
         return;
     }
 
-    showToast('Compiling selected apps...');
+    showToast('正在编译选中应用...');
     const defaultMode = document.getElementById('default-mode')?.value || 'speed';
 
     let compiled = 0;
     let failed = 0;
 
-    for (const package of selectedApps) {
+    for (const package of 已选择Apps) {
         const result = await execCommand(`sh ${SCRIPTS_DIR}/compile_app.sh '${package}' '${defaultMode}'`);
         if (result.errno === 0) {
             compiled++;
@@ -453,33 +567,43 @@ document.getElementById('compile-selected')?.addEventListener('click', async () 
         }
     }
 
-    showToast(`Compiled: ${compiled}, Failed: ${failed}`);
-    selectedApps.clear();
+    showToast(`已编译: ${compiled}, 失败: ${failed}`);
+    已选择Apps.clear();
     updateSelectionCount();
 });
 
-// Compile all
+// 编译 all
 document.getElementById('compile-all')?.addEventListener('click', async () => {
-    if (!confirm('Compile all uncompiled apps? This may take a while.')) {
+    if (!confirm('编译 all uncompiled apps? 这可能需要一段时间.')) {
         return;
     }
 
-    showToast('Starting batch compilation...');
-    logDebug('Starting batch compilation');
+    showToast('开始批量编译...');
+    logDebug('开始批量编译');
 
     const result = await execCommand(`sh ${SCRIPTS_DIR}/compile_all.sh manual`);
 
     if (result.errno === 0) {
-        showToast('Compilation started');
-        logDebug('Compilation started successfully');
+        showToast('编译已开始');
+        logDebug('编译已开始 successfully');
     } else {
-        showToast('Failed to start compilation');
-        logError(`Failed to start compilation: ${result.stderr || result.stdout}`);
+        showToast('启动编译失败');
+        logError(`启动编译失败: ${result.stderr || result.stdout}`);
     }
 });
 
 // Schedule functions
-async function loadSchedule() {
+async function loadSchedule(background = false) {
+    // Prevent concurrent loads
+    if (tabLoading.schedule) return;
+    tabLoading.schedule = true;
+
+    // If background and current tab is not schedule, skip
+    if (background && currentTab !== 'schedule') {
+        tabLoading.schedule = false;
+        return;
+    }
+
     try {
         const result = await execCommand(`cat ${CONFIGS_DIR}/dexoat.conf`);
         if (result.errno === 0) {
@@ -492,8 +616,15 @@ async function loadSchedule() {
             document.getElementById('schedule-cron').value = schedule;
             document.getElementById('schedule-enabled').checked = enabled === 'true';
         }
+        tabLoaded.schedule = true;
+        tabLoadTime.schedule = Date.now();
+        if (background) {
+            logDebug('计划数据已在后台刷新 in background');
+        }
     } catch (error) {
-        logError(`Error loading schedule: ${error.message}`);
+        if (!background) logError(`加载错误 schedule: ${error.message}`);
+    } finally {
+        tabLoading.schedule = false;
     }
 }
 
@@ -504,8 +635,8 @@ document.getElementById('save-schedule')?.addEventListener('click', async () => 
     await execCommand(`sed -i 's/^schedule=.*/schedule=${cron}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^schedule_enabled=.*/schedule_enabled=${enabled}/' ${CONFIGS_DIR}/dexoat.conf`);
 
-    showToast('Schedule saved');
-    logDebug('Schedule saved');
+    showToast('计划已保存');
+    logDebug('计划已保存');
 
     await execCommand('pkill -f dexoat_ks');
     await execCommand(`sh ${MODULE_DIR}/service.sh &`);
@@ -514,79 +645,106 @@ document.getElementById('save-schedule')?.addEventListener('click', async () => 
 });
 
 document.getElementById('trigger-now')?.addEventListener('click', async () => {
-    if (!confirm('Trigger scheduled compilation now?')) {
+    if (!confirm('立即执行计划编译？?')) {
         return;
     }
 
-    showToast('Starting scheduled compilation...');
+    showToast('开始计划编译...');
     await execCommand(`sh ${SCRIPTS_DIR}/compile_all.sh scheduled`);
-    showToast('Compilation started');
+    showToast('编译已开始');
 });
 
 // Config functions
-async function loadConfig() {
+async function loadConfig(background = false) {
+    // Prevent concurrent loads
+    if (tabLoading.config) return;
+    tabLoading.config = true;
+
+    // If background and current tab is not config, skip
+    if (background && currentTab !== 'config') {
+        tabLoading.config = false;
+        return;
+    }
+
     try {
         const result = await execCommand(`cat ${CONFIGS_DIR}/dexoat.conf`);
         if (result.errno === 0) {
             const lines = result.stdout.split('\n');
 
             const defaultMode = lines.find(l => l.startsWith('default_mode='))?.split('=')[1] || 'speed';
-            const skipCompiled = lines.find(l => l.startsWith('skip_compiled='))?.split('=')[1] || 'true';
+            const skip编译d = lines.find(l => l.startsWith('skip_compiled='))?.split('=')[1] || 'true';
             const detectModeReset = lines.find(l => l.startsWith('detect_mode_reset='))?.split('=')[1] || 'true';
             const compileOnBoot = lines.find(l => l.startsWith('compile_on_boot='))?.split('=')[1] || 'true';
             const logLevel = lines.find(l => l.startsWith('log_level='))?.split('=')[1] || 'INFO';
             const parallelJobs = lines.find(l => l.startsWith('parallel_jobs='))?.split('=')[1] || '2';
 
             document.getElementById('default-mode').value = defaultMode;
-            document.getElementById('skip-compiled').checked = skipCompiled === 'true';
+            document.getElementById('skip-compiled').checked = skip编译d === 'true';
             document.getElementById('detect-mode-reset').checked = detectModeReset === 'true';
             document.getElementById('compile-on-boot').checked = compileOnBoot === 'true';
             document.getElementById('log-level').value = logLevel;
             document.getElementById('parallel-jobs').value = parallelJobs;
         }
+        tabLoaded.config = true;
+        tabLoadTime.config = Date.now();
+        if (background) {
+            logDebug('配置数据已在后台刷新 in background');
+        }
     } catch (error) {
-        logError(`Error loading config: ${error.message}`);
+        if (!background) logError(`加载错误 config: ${error.message}`);
+    } finally {
+        tabLoading.config = false;
     }
 }
 
 document.getElementById('save-config')?.addEventListener('click', async () => {
     const defaultMode = document.getElementById('default-mode')?.value || 'speed';
-    const skipCompiled = document.getElementById('skip-compiled')?.checked;
+    const skip编译d = document.getElementById('skip-compiled')?.checked;
     const detectModeReset = document.getElementById('detect-mode-reset')?.checked;
     const compileOnBoot = document.getElementById('compile-on-boot')?.checked;
     const logLevel = document.getElementById('log-level')?.value || 'INFO';
     const parallelJobs = document.getElementById('parallel-jobs')?.value || '2';
 
     await execCommand(`sed -i 's/^default_mode=.*/default_mode=${defaultMode}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^skip_compiled=.*/skip_compiled=${skipCompiled}/' ${CONFIGS_DIR}/dexoat.conf`);
+    await execCommand(`sed -i 's/^skip_compiled=.*/skip_compiled=${skip编译d}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^detect_mode_reset=.*/detect_mode_reset=${detectModeReset}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^compile_on_boot=.*/compile_on_boot=${compileOnBoot}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^log_level=.*/log_level=${logLevel}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^parallel_jobs=.*/parallel_jobs=${parallelJobs}/' ${CONFIGS_DIR}/dexoat.conf`);
 
-    showToast('Configuration saved');
-    logDebug('Configuration saved');
+    showToast('配置已保存');
+    logDebug('配置已保存');
 
     await execCommand('pkill -f dexoat_ks');
     await execCommand(`sh ${MODULE_DIR}/service.sh &`);
 });
 
 document.getElementById('un-compile-all')?.addEventListener('click', async () => {
-    if (!confirm('This will remove ALL compilations. Apps will run slower. Continue?')) {
+    if (!confirm('这将清除所有编译. 应用运行速度会变慢. 继续?')) {
         return;
     }
 
     const result = await execCommand(`echo yes | sh ${SCRIPTS_DIR}/un_compile_all.sh`);
 
     if (result.errno === 0) {
-        showToast('All compilations removed. Reboot recommended.');
+        showToast('所有编译已清除. 建议重启.');
     } else {
-        showToast('Failed to remove compilations');
+        showToast('清除编译失败');
     }
 });
 
 // Logs functions
-async function loadLogs() {
+async function loadLogs(background = false) {
+    // Prevent concurrent loads
+    if (tabLoading.logs) return;
+    tabLoading.logs = true;
+
+    // If background and current tab is not logs, skip
+    if (background && currentTab !== 'logs') {
+        tabLoading.logs = false;
+        return;
+    }
+
     try {
         const filter = document.getElementById('log-level-filter')?.value || 'all';
         let lines = 50;
@@ -615,9 +773,16 @@ async function loadLogs() {
         logs = logs.replace(/\[(DEBUG)\]/g, '<span class="log-DEBUG">[$1]</span>');
 
         document.getElementById('logs-content').innerHTML = logs;
+        tabLoaded.logs = true;
+        tabLoadTime.logs = Date.now();
+        if (background) {
+            logDebug('Logs data refreshed in background');
+        }
     } catch (error) {
-        logError(`Error loading logs: ${error.message}`);
-        document.getElementById('logs-content').textContent = `Error loading logs: ${error.message}`;
+        if (!background) logError(`加载错误 logs: ${error.message}`);
+        document.getElementById('logs-content').textContent = `加载错误 logs: ${error.message}`;
+    } finally {
+        tabLoading.logs = false;
     }
 }
 
@@ -630,7 +795,7 @@ document.getElementById('clear-logs')?.addEventListener('click', async () => {
     }
 
     await execCommand(`> ${LOGS_DIR}/dexoat.log`);
-    showToast('Logs cleared');
+    showToast('日志已清空');
     loadLogs();
 });
 
@@ -645,15 +810,15 @@ document.getElementById('download-logs')?.addEventListener('click', async () => 
         a.download = `dexoat-${new Date().toISOString()}.log`;
         a.click();
         URL.revokeObjectURL(url);
-        showToast('Log downloaded');
+        showToast('日志已下载');
     } else {
-        showToast('Failed to download logs');
+        showToast('下载日志失败');
     }
 });
 
 // Refresh buttons
-document.getElementById('refresh-dashboard')?.addEventListener('click', loadDashboard);
-document.getElementById('refresh-apps')?.addEventListener('click', loadApps);
+document.getElementById('refresh-dashboard')?.addEventListener('click', () => loadDashboard(false));
+document.getElementById('refresh-apps')?.addEventListener('click', () => loadApps(false));
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {

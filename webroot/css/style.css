@@ -297,6 +297,7 @@ header h1 {
 
 .app-icon {
     font-size: 2rem;
+    flex-shrink: 0;
 }
 
 .app-info {
