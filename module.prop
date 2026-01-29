@@ -1,7 +1,7 @@
 id=dexoat_ks
 name=Dex2Oat Manager
-version=1.0.2
-versionCode=3
+version=1.0.3
+versionCode=4
 author=Zipper
 description=WebUI for managing app dex2oat compilation with scheduling, smart detection, and comprehensive logging
 updateJson=https://raw.githubusercontent.com/ZipperCode/dexoat_ks/main/update.json

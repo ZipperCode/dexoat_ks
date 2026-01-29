@@ -190,6 +190,19 @@ The WebUI uses a single-page app (SPA) approach with lazy loading:
 - Log debug messages to console for troubleshooting
 - Display errors via toast messages
 
+## Version Management
+
+Every time changes are pushed to remote, version must be bumped and a new tag created:
+
+1. Update `module.prop`: increment `version` (semver) and `versionCode` (integer)
+2. Update `update.json`: update `version`, `versionCode`, and `zipUrl` with new version
+3. Commit the version bump
+4. Create git tag: `git tag v{version}`
+5. Push with tags: `git push && git push --tags`
+
+**Version format**: `major.minor.patch` (e.g., 1.0.3)
+**Tag format**: `v{version}` (e.g., v1.0.3)
+
 ## Critical Gotchas
 
 1. **Never modify get_apps.sh to depend on other scripts** - This will break WebUI loading
