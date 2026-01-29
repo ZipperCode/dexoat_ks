@@ -88,8 +88,8 @@ should_run_now() {
       return 0
     fi
 
-    # Exact match
-    if [ "$field_value" = "$current" ]; then
+    # Numeric comparison (handles leading zeros like "02" vs "2")
+    if [ "$field_value" -eq "$current" ] 2>/dev/null; then
       return 0
     fi
 
