@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.4] - 2026-02-08
+
+### Added
+- Backend pagination for Apps list to reduce initial load time
+- Config toggles to include/exclude system and third-party apps in batch compilation
+- AGENTS.md contributor guide
+
+### Fixed
+- Batch compilation JSON parsing for paginated app list responses
+
 ## [1.0.1] - 2025-01-22
 
 ### Added
