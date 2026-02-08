@@ -8,7 +8,6 @@ const CONFIGS_DIR = `${MODULE_DIR}/configs`;
 const LOGS_DIR = `${MODULE_DIR}/logs`;
 
 // Global state
-let allApps = [];
 let filteredApps = [];
 let selectedApps = new Set();
 let currentTab = 'dashboard';
@@ -16,6 +15,10 @@ let currentPage = 1;
 let pageSize = 50;
 let isLoading = false;
 let execAvailable = false;
+let compileSystemAppsEnabled = false;
+let compileScopeLoaded = false;
+let totalApps = -1;
+let hasMoreApps = false;
 
 // Track loaded state for each tab
 let tabLoaded = {
@@ -103,6 +106,26 @@ function debounce(func, wait) {
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
     };
+}
+
+async function refreshCompileScope() {
+    if (compileScopeLoaded) return;
+    const result = await execCommand(`cat ${CONFIGS_DIR}/dexoat.conf`);
+    if (result.errno !== 0) return;
+
+    const lines = result.stdout.split('\n');
+    const compileSystemApps = lines.find(l => l.startsWith('compile_system_apps='))?.split('=')[1] || 'false';
+    compileSystemAppsEnabled = compileSystemApps === 'true';
+    compileScopeLoaded = true;
+}
+function escapeShellArg(value) {
+    return "'" + String(value).replace(/'/g, "'\"'\"'") + "'";
+}
+
+function getTypeForFilter(filter) {
+    if (filter === 'user') return 'user';
+    if (filter === 'system') return 'system';
+    return 'config';
 }
 
 // Tab switching
@@ -209,12 +232,12 @@ async function loadDashboard(background = false) {
             return;
         }
 
-        allApps = data.apps || [];
+        const dashboardApps = data.apps || [];
 
         // Update stats
-        const total = allApps.length;
-        const compiled = allApps.filter(a => a.isCompiled === true || a.isCompiled === 'true').length;
-        const needsRecompile = allApps.filter(a => a.needsRecompile === true || a.needsRecompile === 'true').length;
+        const total = dashboardApps.length;
+        const compiled = dashboardApps.filter(a => a.isCompiled === true || a.isCompiled === 'true').length;
+        const needsRecompile = dashboardApps.filter(a => a.needsRecompile === true || a.needsRecompile === 'true').length;
         const pending = total - compiled;
 
         // Update DOM with actual values
@@ -278,13 +301,40 @@ async function loadApps(background = false) {
         return;
     }
 
+    await refreshCompileScope();
+
     try {
         const container = document.getElementById('apps-list');
+        const filter = document.getElementById('filter-apps')?.value || 'all';
+        const searchTerm = document.getElementById('search-apps')?.value || '';
+        const type = getTypeForFilter(filter);
+
+        if (type === 'system' && !compileSystemAppsEnabled) {
+            filteredApps = [];
+            totalApps = 0;
+            hasMoreApps = false;
+            if (container && !background) {
+                container.innerHTML = '<p class="loading">系统应用未启用（请在配置中开启）</p>';
+            }
+            updatePagination();
+            return;
+        }
+
         if (container && !background) {
             container.innerHTML = '<p class="loading">加载应用中 (this may take a moment)...</p>';
         }
 
-        const result = await execCommand(`sh ${SCRIPTS_DIR}/get_apps.sh`);
+        const offset = (currentPage - 1) * pageSize;
+        const cmd = [
+            `sh ${SCRIPTS_DIR}/get_apps.sh`,
+            `--type ${type}`,
+            `--filter ${filter}`,
+            `--offset ${offset}`,
+            `--limit ${pageSize}`,
+            `--search ${escapeShellArg(searchTerm)}`
+        ].join(' ');
+
+        const result = await execCommand(cmd);
 
         logDebug(`loadApps result: errno=${result.errno}`);
 
@@ -292,7 +342,6 @@ async function loadApps(background = false) {
             if (container && !background) {
                 container.innerHTML = `<p class="loading" style="color: var(--danger-color)">加载应用失败<br><small>${result.stderr || 'Unknown error'}</small></p>`;
             }
-            tabLoading.apps = false;
             return;
         }
 
@@ -300,7 +349,6 @@ async function loadApps(background = false) {
             if (container && !background) {
                 container.innerHTML = '<p class="loading">未收到服务器数据</p>';
             }
-            tabLoading.apps = false;
             return;
         }
 
@@ -315,18 +363,20 @@ async function loadApps(background = false) {
                     container.innerHTML = `<p class="loading" style="color: var(--danger-color)">解析应用数据失败<br><small>${e.message}</small></p>`;
                 }
             }
-            tabLoading.apps = false;
             return;
         }
 
-        allApps = data.apps || [];
+        filteredApps = data.apps || [];
+        totalApps = typeof data.total === 'number' ? data.total : -1;
+        hasMoreApps = data.hasMore === true;
 
         if (!background) {
-            showToast(`已加载 ${allApps.length} 个应用`);
+            showToast(`已加载 ${filteredApps.length} 个应用`);
         }
-        logDebug(`已加载 ${allApps.length} 个应用`);
+        logDebug(`已加载 ${filteredApps.length} 个应用`);
 
-        filterAndRenderApps();
+        renderPage();
+        updatePagination();
         tabLoaded.apps = true;
         tabLoadTime.apps = Date.now();
 
@@ -346,48 +396,12 @@ async function loadApps(background = false) {
 }
 
 function filterAndRenderApps() {
-    const searchTerm = document.getElementById('search-apps')?.value.toLowerCase() || '';
-    const filter = document.getElementById('filter-apps')?.value || 'all';
-
-    // Filter apps
-    filteredApps = allApps;
-
-    if (searchTerm) {
-        filteredApps = filteredApps.filter(app =>
-            app.packageName.toLowerCase().includes(searchTerm)
-        );
-    }
-
-    switch (filter) {
-        case 'user':
-            filteredApps = filteredApps.filter(app => app.isSystem === false || app.isSystem === 'false');
-            break;
-        case 'system':
-            filteredApps = filteredApps.filter(app => app.isSystem === true || app.isSystem === 'true');
-            break;
-        case 'compiled':
-            filteredApps = filteredApps.filter(app => app.isCompiled === true || app.isCompiled === 'true');
-            break;
-        case 'uncompiled':
-            filteredApps = filteredApps.filter(app => app.isCompiled === false || app.isCompiled === 'false');
-            break;
-        case 'needs-recompile':
-            filteredApps = filteredApps.filter(app => app.needsRecompile === true || app.needsRecompile === 'true');
-            break;
-    }
-
-    // Reset to page 1
     currentPage = 1;
-    renderPage();
-    updatePagination();
+    loadApps(false);
 }
 
 function renderPage() {
-    const start = (currentPage - 1) * pageSize;
-    const end = start + pageSize;
-    const pageApps = filteredApps.slice(start, end);
-
-    renderAppsList(pageApps);
+    renderAppsList(filteredApps);
 }
 
 function renderAppsList(appsToRender) {
@@ -396,6 +410,11 @@ function renderAppsList(appsToRender) {
     if (!container) return;
 
     if (appsToRender.length === 0) {
+        const filter = document.getElementById('filter-apps')?.value || 'all';
+        if (filter === 'system' && !compileSystemAppsEnabled) {
+            container.innerHTML = '<p class="loading">系统应用未启用（请在配置中开启）</p>';
+            return;
+        }
         container.innerHTML = '<p class="loading">未找到应用</p>';
         return;
     }
@@ -469,14 +488,24 @@ function escapeHtml(text) {
 }
 
 function updatePagination() {
-    const totalPages = Math.ceil(filteredApps.length / pageSize);
+    const totalPages = totalApps >= 0 ? Math.max(1, Math.ceil(totalApps / pageSize)) : -1;
     const pageInfo = document.getElementById('page-info');
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
 
-    if (pageInfo) pageInfo.textContent = `第 ${currentPage} 页，共 ${totalPages} 页`;
+    if (pageInfo) {
+        pageInfo.textContent = totalPages >= 0
+            ? `第 ${currentPage} 页，共 ${totalPages} 页`
+            : `第 ${currentPage} 页`;
+    }
     if (prevBtn) prevBtn.disabled = currentPage <= 1;
-    if (nextBtn) nextBtn.disabled = currentPage >= (totalPages || 1);
+    if (nextBtn) {
+        if (totalPages >= 0) {
+            nextBtn.disabled = currentPage >= totalPages;
+        } else {
+            nextBtn.disabled = !hasMoreApps;
+        }
+    }
 }
 
 function updateSelectionCount() {
@@ -490,25 +519,22 @@ function updateSelectionCount() {
 document.getElementById('prev-page')?.addEventListener('click', () => {
     if (currentPage > 1) {
         currentPage--;
-        renderPage();
-        updatePagination();
+        loadApps(false);
     }
 });
 
 document.getElementById('next-page')?.addEventListener('click', () => {
-    const totalPages = Math.ceil(filteredApps.length / pageSize);
-    if (currentPage < totalPages) {
+    const totalPages = totalApps >= 0 ? Math.max(1, Math.ceil(totalApps / pageSize)) : -1;
+    if ((totalPages >= 0 && currentPage < totalPages) || (totalPages < 0 && hasMoreApps)) {
         currentPage++;
-        renderPage();
-        updatePagination();
+        loadApps(false);
     }
 });
 
 document.getElementById('page-size')?.addEventListener('change', (e) => {
-    pageSize = parseInt(e.target.value);
+    pageSize = parseInt(e.target.value, 10);
     currentPage = 1;
-    renderPage();
-    updatePagination();
+    loadApps(false);
 });
 
 // Filter and search with debounce
@@ -520,9 +546,7 @@ document.getElementById('filter-apps')?.addEventListener('change', () => filterA
 
 // Select all on current page
 document.getElementById('select-all-apps')?.addEventListener('change', (e) => {
-    const start = (currentPage - 1) * pageSize;
-    const end = start + pageSize;
-    const pageApps = filteredApps.slice(start, end);
+    const pageApps = filteredApps;
 
     pageApps.forEach(app => {
         if (e.target.checked) {
@@ -686,6 +710,8 @@ async function loadConfig(background = false) {
             const skipCompiled = lines.find(l => l.startsWith('skip_compiled='))?.split('=')[1] || 'true';
             const detectModeReset = lines.find(l => l.startsWith('detect_mode_reset='))?.split('=')[1] || 'true';
             const compileOnBoot = lines.find(l => l.startsWith('compile_on_boot='))?.split('=')[1] || 'true';
+            const compileSystemApps = lines.find(l => l.startsWith('compile_system_apps='))?.split('=')[1] || 'false';
+            const compileUserApps = lines.find(l => l.startsWith('compile_user_apps='))?.split('=')[1] || 'true';
             const logLevel = lines.find(l => l.startsWith('log_level='))?.split('=')[1] || 'INFO';
             const parallelJobs = lines.find(l => l.startsWith('parallel_jobs='))?.split('=')[1] || '2';
 
@@ -693,8 +719,13 @@ async function loadConfig(background = false) {
             document.getElementById('skip-compiled').checked = skipCompiled === 'true';
             document.getElementById('detect-mode-reset').checked = detectModeReset === 'true';
             document.getElementById('compile-on-boot').checked = compileOnBoot === 'true';
+            document.getElementById('compile-system-apps').checked = compileSystemApps === 'true';
+            document.getElementById('compile-user-apps').checked = compileUserApps === 'true';
             document.getElementById('log-level').value = logLevel;
             document.getElementById('parallel-jobs').value = parallelJobs;
+
+            compileSystemAppsEnabled = compileSystemApps === 'true';
+            compileScopeLoaded = true;
         }
         tabLoaded.config = true;
         tabLoadTime.config = Date.now();
@@ -713,6 +744,8 @@ document.getElementById('save-config')?.addEventListener('click', async () => {
     const skipCompiled = document.getElementById('skip-compiled')?.checked;
     const detectModeReset = document.getElementById('detect-mode-reset')?.checked;
     const compileOnBoot = document.getElementById('compile-on-boot')?.checked;
+    const compileSystemApps = document.getElementById('compile-system-apps')?.checked;
+    const compileUserApps = document.getElementById('compile-user-apps')?.checked;
     const logLevel = document.getElementById('log-level')?.value || 'INFO';
     const parallelJobs = document.getElementById('parallel-jobs')?.value || '2';
 
@@ -720,8 +753,18 @@ document.getElementById('save-config')?.addEventListener('click', async () => {
     await execCommand(`sed -i 's/^skip_compiled=.*/skip_compiled=${skipCompiled}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^detect_mode_reset=.*/detect_mode_reset=${detectModeReset}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^compile_on_boot=.*/compile_on_boot=${compileOnBoot}/' ${CONFIGS_DIR}/dexoat.conf`);
+    await execCommand(`sed -i 's/^compile_system_apps=.*/compile_system_apps=${compileSystemApps}/' ${CONFIGS_DIR}/dexoat.conf`);
+    await execCommand(`sed -i 's/^compile_user_apps=.*/compile_user_apps=${compileUserApps}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^log_level=.*/log_level=${logLevel}/' ${CONFIGS_DIR}/dexoat.conf`);
     await execCommand(`sed -i 's/^parallel_jobs=.*/parallel_jobs=${parallelJobs}/' ${CONFIGS_DIR}/dexoat.conf`);
+
+    compileSystemAppsEnabled = compileSystemApps === true;
+    compileScopeLoaded = true;
+    tabLoaded.apps = false;
+    if (currentTab === 'apps') {
+        currentPage = 1;
+        loadApps(false);
+    }
 
     showToast('配置已保存');
     logDebug('配置已保存');

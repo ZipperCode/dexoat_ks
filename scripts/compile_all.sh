@@ -29,6 +29,11 @@ SELINUX_RESTORE=true
 # 是否跳过编译
 SKIP_COMPILED=$(get_config skip_compiled)
 [ -z "$SKIP_COMPILED" ] && SKIP_COMPILED="true"
+# 编译范围
+COMPILE_SYSTEM_APPS=$(get_config compile_system_apps)
+[ -z "$COMPILE_SYSTEM_APPS" ] && COMPILE_SYSTEM_APPS="false"
+COMPILE_USER_APPS=$(get_config compile_user_apps)
+[ -z "$COMPILE_USER_APPS" ] && COMPILE_USER_APPS="true"
 # 并发数
 PARALLEL_JOBS=$(get_config parallel_jobs)
 [ -z "$PARALLEL_JOBS" ] && PARALLEL_JOBS=2
@@ -78,20 +83,36 @@ mkdir -p "$(dirname "$PROGRESS_FILE")"
 echo "{\"compiled\": [], \"skipped\": [], \"failed\": []}" > "$PROGRESS_FILE"
 
 # Process each app from JSON
-echo "$APPS_JSON" | sed 's/^{.*"apps": \[//' | sed 's/\]}$//' | \
-  sed 's/},{/}\n{/g' | while IFS= read -r app_json; do
+APPS_FLAT=$(echo "$APPS_JSON" | tr -d '\n')
+APPS_LIST=$(echo "$APPS_FLAT" | sed 's/^.*"apps":[[:space:]]*\\[//' | sed 's/\\].*$//')
+
+echo "$APPS_LIST" | sed 's/},{/}\n{/g' | while IFS= read -r app_json; do
 
   # 空行
   [ -z "$app_json" ] && continue
 
   # Parse JSON manually (simplified)
   package=$(echo "$app_json" | grep -o '"packageName": *"[^"]*"' | cut -d'"' -f4)
+  is_system=$(echo "$app_json" | grep -o '"isSystem": *[^,}]*' | cut -d: -f2 | tr -d ' ')
   is_compiled=$(echo "$app_json" | grep -o '"isCompiled": *[^,}]*' | cut -d: -f2 | tr -d ' ')
   needs_recompile=$(echo "$app_json" | grep -o '"needsRecompile": *[^,}]*' | cut -d: -f2 | tr -d ' ')
   desired_mode=$(echo "$app_json" | grep -o '"desiredMode": *"[^"]*"' | cut -d'"' -f4)
 
   # Skip if package is empty
   [ -z "$package" ] && continue
+  [ -z "$is_system" ] && is_system="false"
+
+  # Skip by app type selection
+  if [ "$is_system" = "true" ] && [ "$COMPILE_SYSTEM_APPS" != "true" ]; then
+    log_debug "跳过 $package (系统应用已禁用)"
+    skipped_count=$((skipped_count + 1))
+    continue
+  fi
+  if [ "$is_system" = "false" ] && [ "$COMPILE_USER_APPS" != "true" ]; then
+    log_debug "跳过 $package (第三方应用已禁用)"
+    skipped_count=$((skipped_count + 1))
+    continue
+  fi
 
   # Skip if already compiled and skip_compiled is enabled
   if [ "$SKIP_COMPILED" = "true" ] && [ "$is_compiled" = "true" ] && [ "$needs_recompile" = "false" ]; then
