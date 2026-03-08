@@ -2,7 +2,7 @@
 # Configuration management utility for Dex2Oat Manager
 # Usage: source this script and call get_config, set_config
 
-MODULE_DIR="/data/adb/modules/dexoat_ks"
+MODULE_DIR="${DEXOAT_MODULE_DIR:-/data/adb/modules/dexoat_ks}"
 CONFIG_DIR="$MODULE_DIR/configs"
 CONFIG_FILE="$CONFIG_DIR/dexoat.conf"
 APP_RULES_FILE="$CONFIG_DIR/app_rules.conf"
