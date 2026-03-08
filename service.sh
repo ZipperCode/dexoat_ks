@@ -9,6 +9,13 @@ export ASH_STANDALONE=1
 
 MODULE_DIR="/data/adb/modules/dexoat_ks"
 SCRIPT_DIR="$MODULE_DIR/scripts"
+CONSTANTS_FILE="$SCRIPT_DIR/lib/constants.sh"
+
+if [ -f "$CONSTANTS_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$CONSTANTS_FILE"
+fi
+
 CONFIG_FILE="$MODULE_DIR/configs/dexoat.conf"
 PID_FILE="$MODULE_DIR/data/scheduler.pid"
 
@@ -19,6 +26,8 @@ PID_FILE="$MODULE_DIR/data/scheduler.pid"
 # Ensure directories exist
 mkdir -p "$MODULE_DIR/logs"
 mkdir -p "$MODULE_DIR/data"
+mkdir -p "$MODULE_DIR/scripts/engine"
+mkdir -p "$MODULE_DIR/scripts/lib"
 
 # Wait for system to be fully booted
 wait_for_boot_complete() {

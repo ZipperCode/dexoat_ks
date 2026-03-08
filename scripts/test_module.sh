@@ -26,6 +26,15 @@ for script in compile_app.sh get_apps.sh compile_all.sh logger.sh config_manager
 done
 
 echo ""
+echo "2.1 Checking core constants..."
+if [ -f "$MODULE_DIR/scripts/lib/constants.sh" ]; then
+  echo "   ✓ constants.sh exists"
+else
+  echo "   ✗ constants.sh NOT found"
+  exit 1
+fi
+
+echo ""
 echo "3. Checking configuration..."
 if [ -f "$MODULE_DIR/configs/dexoat.conf" ]; then
   echo "   ✓ Config file exists"
