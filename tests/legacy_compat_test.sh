@@ -28,7 +28,7 @@ assert_contains "$out_app" '"success":true' 'compile_app shim success'
 assert_contains "$out_app" 'com.example.legacy' 'compile_app target package'
 
 out_get="$(sh "$ROOT_DIR/scripts/get_apps.sh" 2>/dev/null || true)"
-assert_contains "$out_get" '"success":true' 'get_apps shim success'
-assert_contains "$out_get" '"count"' 'get_apps shim returns queue data'
+assert_contains "$out_get" '"apps":[' 'get_apps compatibility output'
+assert_contains "$out_get" '"total"' 'get_apps includes total field'
 
 echo "[PASS] legacy_compat_test"
