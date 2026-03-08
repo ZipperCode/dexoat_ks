@@ -1,223 +1,175 @@
 #!/system/bin/sh
-# Dex2Oat Manager
-# 在模块启动时运行，用于初始化日志记录、调度和可选的启动编译
+# Dex2Oat service supervisor: starts and recovers engine daemons.
 
-# 使用KernelSU的busybox
 export PATH="/data/adb/ksu/bin/busybox:$PATH"
-# 设置ASH_STANDALONE模式以确保使用完整的BusyBox功能
 export ASH_STANDALONE=1
 
-MODULE_DIR="/data/adb/modules/dexoat_ks"
+MODULE_DIR="${DEXOAT_MODULE_DIR:-/data/adb/modules/dexoat_ks}"
 SCRIPT_DIR="$MODULE_DIR/scripts"
-CONSTANTS_FILE="$SCRIPT_DIR/lib/constants.sh"
+DATA_DIR="$MODULE_DIR/data"
+HEALTH_DIR="$DATA_DIR/health"
+PID_DIR="$DATA_DIR/pids"
 
-if [ -f "$CONSTANTS_FILE" ]; then
+EVENTD_HEARTBEAT="$HEALTH_DIR/eventd.heartbeat"
+QUEUED_HEARTBEAT="$HEALTH_DIR/queued.heartbeat"
+
+COMPONENT_TIMEOUT_SECONDS="${COMPONENT_TIMEOUT_SECONDS:-180}"
+SUPERVISE_INTERVAL_SECONDS="${SUPERVISE_INTERVAL_SECONDS:-15}"
+
+EVENTD_COMMAND="${EVENTD_COMMAND:-sh '$SCRIPT_DIR/engine/eventd.sh'}"
+QUEUED_COMMAND="${QUEUED_COMMAND:-while true; do sh '$SCRIPT_DIR/engine/queued.sh' --once; date '+%s' > '$QUEUED_HEARTBEAT'; sleep 5; done}"
+
+if [ -f "$SCRIPT_DIR/logger.sh" ]; then
   # shellcheck disable=SC1090
-  . "$CONSTANTS_FILE"
+  . "$SCRIPT_DIR/logger.sh"
 fi
 
-CONFIG_FILE="$MODULE_DIR/configs/dexoat.conf"
-PID_FILE="$MODULE_DIR/data/scheduler.pid"
-
-# Source dependencies
-. "$SCRIPT_DIR/logger.sh"
-. "$SCRIPT_DIR/config_manager.sh"
-
-# Ensure directories exist
-mkdir -p "$MODULE_DIR/logs"
-mkdir -p "$MODULE_DIR/data"
-mkdir -p "$MODULE_DIR/scripts/engine"
-mkdir -p "$MODULE_DIR/scripts/lib"
-
-# Wait for system to be fully booted
-wait_for_boot_complete() {
-  # Wait for boot to complete (max 5 minutes)
-  for i in $(seq 1 60); do
-    if [ "$(getprop sys.boot_completed 2>/dev/null)" = "1" ]; then
-      log_info "System boot completed"
-      return 0
-    fi
-    log_debug "Waiting for boot to complete... ($i/60)"
-    sleep 5
-  done
-
-  log_warn "Boot completion timeout, proceeding anyway"
-}
-
-# Rotate logs if they get too large
-rotate_logs() {
-  LOG_FILE="$MODULE_DIR/logs/dexoat.log"
-
-  if [ ! -f "$LOG_FILE" ]; then
-    return
-  fi
-
-  size=$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)
-
-  # Rotate if size exceeds 5MB
-  if [ "$size" -gt 5242880 ]; then
-    log_info "Rotating logs (size: $size bytes)"
-
-    # Keep 5 rotated logs
-    for i in 4 3 2 1; do
-      if [ -f "$LOG_FILE.$i" ]; then
-        mv "$LOG_FILE.$i" "$LOG_FILE.$((i + 1))" 2>/dev/null
-      fi
-    done
-
-    mv "$LOG_FILE" "$LOG_FILE.1" 2>/dev/null
+log_info_safe() {
+  if [ "$(type -t log_info 2>/dev/null || true)" = "function" ]; then
+    log_info "$@"
+  else
+    printf '[INFO] %s\n' "$*"
   fi
 }
 
-# Parse cron schedule and check if should run now
-should_run_now() {
-  schedule="$1"
+log_warn_safe() {
+  if [ "$(type -t log_warn 2>/dev/null || true)" = "function" ]; then
+    log_warn "$@"
+  else
+    printf '[WARN] %s\n' "$*"
+  fi
+}
 
-  # Parse schedule: minute hour day month weekday
-  minute=$(echo "$schedule" | awk '{print $1}')
-  hour=$(echo "$schedule" | awk '{print $2}')
-  day=$(echo "$schedule" | awk '{print $3}')
-  month=$(echo "$schedule" | awk '{print $4}')
-  weekday=$(echo "$schedule" | awk '{print $5}')
+ensure_runtime_dirs() {
+  mkdir -p "$DATA_DIR" "$HEALTH_DIR" "$PID_DIR"
+}
 
-  # Get current time
-  current_minute=$(date '+%M')
-  current_hour=$(date '+%H')
-  current_day=$(date '+%d')
-  current_month=$(date '+%m')
-  current_weekday=$(date '+%u')  # 1-7 (Mon-Sun)
+is_pid_alive() {
+  pid="$1"
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
 
-  # Check each field (support wildcards *)
-  check_field() {
-    field_value=$1
-    current=$2
+start_managed_component() {
+  name="$1"
+  command="$2"
+  heartbeat_file="$3"
 
-    # Wildcard matches everything
-    if [ "$field_value" = "*" ]; then
-      return 0
-    fi
+  ensure_runtime_dirs
 
-    # Numeric comparison (handles leading zeros like "02" vs "2")
-    if [ "$field_value" -eq "$current" ] 2>/dev/null; then
-      return 0
-    fi
+  sh -c "$command" >/dev/null 2>&1 &
+  new_pid="$!"
 
-    # Range match (e.g., 1-5)
-    if echo "$field_value" | grep -qE '^[0-9]+-[0-9]+$'; then
-      start=$(echo "$field_value" | cut -d- -f1)
-      end=$(echo "$field_value" | cut -d- -f2)
-      if [ "$current" -ge "$start" ] && [ "$current" -le "$end" ]; then
-        return 0
-      fi
-    fi
+  printf '%s' "$new_pid" > "$PID_DIR/$name.pid"
+  date '+%s' > "$heartbeat_file"
 
-    return 1
+  log_info_safe "started $name (pid=$new_pid)"
+}
+
+should_restart_component() {
+  pid_file="$1"
+  heartbeat_file="$2"
+  timeout_seconds="$3"
+
+  [ -f "$pid_file" ] || {
+    echo "true"
+    return 0
   }
 
-  # Check all fields
-  if check_field "$minute" "$current_minute" && \
-     check_field "$hour" "$current_hour" && \
-     check_field "$day" "$current_day" && \
-     check_field "$month" "$current_month" && \
-     check_field "$weekday" "$current_weekday"; then
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  is_pid_alive "$pid" || {
+    echo "true"
+    return 0
+  }
+
+  [ -f "$heartbeat_file" ] || {
+    echo "true"
+    return 0
+  }
+
+  heartbeat_ts="$(cat "$heartbeat_file" 2>/dev/null || true)"
+  now_ts="$(date '+%s')"
+
+  case "$heartbeat_ts" in
+    ''|*[!0-9]*)
+      echo "true"
+      return 0
+      ;;
+  esac
+
+  age=$((now_ts - heartbeat_ts))
+  if [ "$age" -gt "$timeout_seconds" ]; then
+    echo "true"
+  else
+    echo "false"
+  fi
+}
+
+supervise_component() {
+  name="$1"
+  command="$2"
+  heartbeat_file="$3"
+  timeout_seconds="$4"
+
+  pid_file="$PID_DIR/$name.pid"
+  need_restart="$(should_restart_component "$pid_file" "$heartbeat_file" "$timeout_seconds")"
+
+  if [ "$need_restart" = "true" ]; then
+    old_pid="$(cat "$pid_file" 2>/dev/null || true)"
+    if is_pid_alive "$old_pid"; then
+      kill "$old_pid" 2>/dev/null || true
+    fi
+
+    start_managed_component "$name" "$command" "$heartbeat_file"
+    RECOVERY_TRIGGERED="true"
+    log_warn_safe "recovered $name"
     return 0
   fi
 
-  return 1
+  RECOVERY_TRIGGERED="false"
+  return 0
 }
 
-# Perform boot compilation
-boot_compile() {
-  log_info "Starting boot compilation"
-
-  # Wait a bit for system to stabilize
-  sleep 30
-
-  # Run compilation in background
-  sh "$SCRIPT_DIR/compile_all.sh" boot >> "$MODULE_DIR/logs/boot_compile.log" 2>&1 &
-
-  log_info "Boot compilation started in background (PID: $!)"
+supervise_once() {
+  supervise_component "eventd" "$EVENTD_COMMAND" "$EVENTD_HEARTBEAT" "$COMPONENT_TIMEOUT_SECONDS"
+  supervise_component "queued" "$QUEUED_COMMAND" "$QUEUED_HEARTBEAT" "$COMPONENT_TIMEOUT_SECONDS"
 }
 
-# Scheduler daemon
-scheduler_daemon() {
-  log_info "Starting scheduler daemon"
+wait_for_boot_complete() {
+  if ! command -v getprop >/dev/null 2>&1; then
+    return 0
+  fi
 
-  # Main loop
-  last_run_day=0
+  i=1
+  while [ "$i" -le 60 ]; do
+    if [ "$(getprop sys.boot_completed 2>/dev/null)" = "1" ]; then
+      return 0
+    fi
+    sleep 5
+    i=$((i + 1))
+  done
+
+  log_warn_safe "boot completion wait timeout"
+}
+
+main() {
+  ensure_runtime_dirs
+
+  if [ "${DEXOAT_SKIP_BOOT_WAIT:-false}" != "true" ]; then
+    wait_for_boot_complete
+  fi
+
+  start_managed_component "eventd" "$EVENTD_COMMAND" "$EVENTD_HEARTBEAT"
+  start_managed_component "queued" "$QUEUED_COMMAND" "$QUEUED_HEARTBEAT"
 
   while true; do
-    # Check if scheduling is enabled
-    schedule_enabled=$(get_config schedule_enabled)
-
-    if [ "$schedule_enabled" = "true" ]; then
-      schedule=$(get_config schedule)
-
-      # Check if we should run now
-      if should_run_now "$schedule"; then
-        current_day=$(date '+%d')
-
-        # Only run once per day (unless different schedule)
-        if [ "$current_day" -ne "$last_run_day" ]; then
-          log_info "Scheduled compilation triggered"
-          sh "$SCRIPT_DIR/compile_all.sh" scheduled
-          last_run_day=$current_day
-        fi
-      fi
-    fi
-
-    # Sleep for 1 minute before checking again
-    sleep 60
+    supervise_once
+    sleep "$SUPERVISE_INTERVAL_SECONDS"
   done
 }
 
-# Main execution
-log_info "Dex2Oat Manager service starting"
-
-# Rotate logs on startup
-rotate_logs
-
-# Wait for system to be fully booted
-wait_for_boot_complete
-
-# Check if boot compilation is enabled
-compile_on_boot=$(get_config compile_on_boot)
-
-if [ "$compile_on_boot" = "true" ]; then
-  log_info "Boot compilation is enabled"
-
-  # Check if we've already compiled on this boot
-  BOOT_MARKER="$MODULE_DIR/data/boot_compiled_$(date '+%Y%m%d')"
-
-  if [ ! -f "$BOOT_MARKER" ]; then
-    boot_compile
-    touch "$BOOT_MARKER"
-  else
-    log_info "Already compiled on this boot, skipping"
-  fi
-else
-  log_info "Boot compilation is disabled (enable with compile_on_boot=true in config)"
+if [ "${DEXOAT_SERVICE_NO_MAIN:-false}" = "true" ]; then
+  return 0 2>/dev/null || exit 0
 fi
 
-# Check if already running
-if [ -f "$PID_FILE" ]; then
-  old_pid=$(cat "$PID_FILE" 2>/dev/null)
-  if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-    log_info "Scheduler already running (PID: $old_pid)"
-    exit 0
-  fi
-fi
-
-# Start scheduler daemon in background
-scheduler_daemon &
-DAEMON_PID=$!
-
-# Save PID
-echo "$DAEMON_PID" > "$PID_FILE"
-
-log_info "Dex2Oat Manager service initialized (Scheduler PID: $DAEMON_PID)"
-
-# Detach from parent process
-disown "$DAEMON_PID" 2>/dev/null
-
-exit 0
+main "$@"
