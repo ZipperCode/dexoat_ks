@@ -12,5 +12,6 @@ sh "$ROOT_DIR/tests/api_config_rules_test.sh"
 sh "$ROOT_DIR/tests/api_queue_history_test.sh"
 sh "$ROOT_DIR/tests/service_recovery_test.sh"
 sh "$ROOT_DIR/tests/legacy_compat_test.sh"
+sh "$ROOT_DIR/tests/webui_mobile_test.sh"
 
 echo "[PASS] run_all"

@@ -56,6 +56,8 @@ header h1 {
     gap: 8px;
     margin-bottom: 24px;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
 }
 
 .tab {
@@ -67,6 +69,7 @@ header h1 {
     cursor: pointer;
     font-size: 14px;
     transition: all 0.2s;
+    white-space: nowrap;
 }
 
 .tab:hover {
@@ -127,6 +130,7 @@ header h1 {
     color: white;
     border: none;
     padding: 12px 20px;
+    min-height: 44px;
     border-radius: 8px;
     cursor: pointer;
     font-size: 14px;
@@ -257,6 +261,7 @@ header h1 {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
     margin-bottom: 16px;
     padding: 12px;
     background: var(--surface);
@@ -312,6 +317,7 @@ header h1 {
 .app-package {
     font-size: 12px;
     color: var(--text-secondary);
+    overflow-wrap: anywhere;
 }
 
 .app-status {
@@ -413,8 +419,23 @@ header h1 {
 
 /* Responsive */
 @media (max-width: 768px) {
+    body {
+        padding: 12px;
+    }
+
     header h1 {
         font-size: 1.5rem;
+    }
+
+    .tabs {
+        scroll-snap-type: x mandatory;
+        padding-bottom: 4px;
+    }
+
+    .tab {
+        flex: 0 0 auto;
+        scroll-snap-align: start;
+        padding: 10px 16px;
     }
 
     .stats-grid {
@@ -438,6 +459,74 @@ header h1 {
     .toolbar input,
     .toolbar select {
         width: 100%;
+        min-width: 0;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+    }
+
+    .action-buttons .btn {
+        width: 100%;
+    }
+
+    #selection-count {
+        width: 100%;
+        margin-left: 0 !important;
+    }
+
+    .pagination {
+        gap: 8px;
+    }
+
+    #page-info {
+        width: 100%;
+        min-width: 0;
+        order: -1;
+    }
+
+    .pagination .btn {
+        flex: 1 1 45%;
+        min-width: 0;
+    }
+
+    .app-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .logs-container {
+        max-height: 42vh;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 10px;
+    }
+
+    .card,
+    .info-card,
+    .stat-card,
+    .app-card {
+        padding: 14px;
+    }
+
+    .btn {
+        width: 100%;
+    }
+
+    .form-group input[type="text"],
+    .form-group input[type="number"],
+    .form-group select,
+    .toolbar input,
+    .toolbar select {
+        font-size: 16px;
+    }
+
+    .stat-icon {
+        font-size: 2rem;
     }
 }
 
@@ -446,6 +535,7 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 16px;
     margin-top: 20px;
     padding: 16px;
