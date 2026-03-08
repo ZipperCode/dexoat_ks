@@ -17,7 +17,7 @@ fi
 
 echo ""
 echo "2. Checking scripts..."
-for script in compile_app.sh get_apps.sh compile_all.sh logger.sh config_manager.sh; do
+for script in api.sh compile_app.sh get_apps.sh compile_all.sh logger.sh config_manager.sh migrate_legacy_data.sh; do
   if [ -f "$MODULE_DIR/scripts/$script" ]; then
     echo "   ✓ $script exists"
   else
@@ -69,7 +69,17 @@ if [ -f "$MODULE_DIR/scripts/logger.sh" ]; then
 fi
 
 echo ""
-echo "7. Checking WebUI..."
+echo "8. Testing API..."
+if [ -f "$MODULE_DIR/scripts/api.sh" ]; then
+  sh "$MODULE_DIR/scripts/api.sh" get_config | head -c 300
+  echo ""
+  echo "   ✓ API reachable"
+else
+  echo "   ✗ API script NOT found"
+fi
+
+echo ""
+echo "9. Checking WebUI..."
 if [ -f "$MODULE_DIR/webroot/index.html" ]; then
   echo "   ✓ WebUI index.html exists"
 else

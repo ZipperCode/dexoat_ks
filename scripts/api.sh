@@ -199,7 +199,7 @@ cmd_enqueue() {
 }
 
 cmd_queue_status() {
-  count="$(grep -c '|' "$QUEUE_DB" 2>/dev/null || echo 0)"
+  count="$(awk -F'|' 'NF >= 2 { c++ } END { print c + 0 }' "$QUEUE_DB" 2>/dev/null)"
   items="$(build_queue_items_json)"
   json_ok "queue status" "{\"count\":$count,\"items\":$items}"
 }
