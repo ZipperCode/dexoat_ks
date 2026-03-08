@@ -1,241 +1,115 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dex2Oat Manager</title>
-    <link rel="stylesheet" href="css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dex2Oat 控制台</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>⚡ Dex2Oat 管理器</h1>
-            <p class="subtitle">轻松管理应用编译</p>
-        </header>
+  <div class="app-shell">
+    <header class="topbar">
+      <h1>Dex2Oat 控制台</h1>
+      <p>KernelSU 模块内离线 WebUI</p>
+    </header>
 
-        <nav class="tabs">
-            <button class="tab active" data-tab="dashboard">仪表盘</button>
-            <button class="tab" data-tab="apps">应用</button>
-            <button class="tab" data-tab="schedule">计划任务</button>
-            <button class="tab" data-tab="config">配置</button>
-            <button class="tab" data-tab="logs">日志</button>
-        </nav>
+    <nav class="tabs">
+      <button class="tab active" data-tab="overview">总览</button>
+      <button class="tab" data-tab="strategy">策略</button>
+      <button class="tab" data-tab="tasks">任务</button>
+      <button class="tab" data-tab="events">事件</button>
+      <button class="tab" data-tab="logs">日志</button>
+    </nav>
 
-        <main>
-            <!-- Dashboard Tab -->
-            <section id="dashboard" class="tab-content active">
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-icon">📱</div>
-                        <div class="stat-info">
-                            <div class="stat-value" id="total-apps">-</div>
-                            <div class="stat-label">应用总数</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">✅</div>
-                        <div class="stat-info">
-                            <div class="stat-value" id="compiled-apps">-</div>
-                            <div class="stat-label">已编译</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">⚠️</div>
-                        <div class="stat-info">
-                            <div class="stat-value" id="needs-recompile">-</div>
-                            <div class="stat-label">需要重新编译</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">⏳</div>
-                        <div class="stat-info">
-                            <div class="stat-value" id="pending-apps">-</div>
-                            <div class="stat-label">待处理</div>
-                        </div>
-                    </div>
-                </div>
+    <main>
+      <section id="overview" class="panel active">
+        <div class="card-grid">
+          <article class="card">
+            <h3>队列任务数</h3>
+            <p id="queue-count">-</p>
+          </article>
+          <article class="card">
+            <h3>最近任务</h3>
+            <p id="last-task">-</p>
+          </article>
+        </div>
+        <button id="refresh-overview" class="btn">刷新总览</button>
+      </section>
 
-                <div class="action-buttons">
-                    <button id="refresh-dashboard" class="btn btn-secondary">刷新</button>
-                    <button id="compile-all" class="btn btn-primary">编译全部</button>
-                </div>
+      <section id="strategy" class="panel">
+        <article class="card">
+          <h3>全局策略</h3>
+          <label><input type="checkbox" id="global-enabled"> 启用全局编译</label>
+          <label>默认模式
+            <select id="default-mode">
+              <option value="speed">speed</option>
+              <option value="verify">verify</option>
+              <option value="speed-profile">speed-profile</option>
+            </select>
+          </label>
+          <button id="save-strategy" class="btn">保存策略</button>
+        </article>
 
-                <div class="info-card">
-                    <h3>计划任务状态</h3>
-                    <p><strong>计划：</strong> <span id="schedule-display">未配置</span></p>
-                    <p><strong>状态：</strong> <span id="scheduler-status">检查中...</span></p>
-                </div>
-            </section>
+        <article class="card">
+          <h3>排除规则</h3>
+          <label>包名 <input type="text" id="rule-package" placeholder="com.example.app"></label>
+          <label>模式
+            <select id="rule-mode">
+              <option value="speed">speed</option>
+              <option value="verify">verify</option>
+              <option value="speed-profile">speed-profile</option>
+            </select>
+          </label>
+          <div class="row">
+            <button id="add-rule" class="btn">添加/更新规则</button>
+            <button id="remove-rule" class="btn btn-danger">删除规则</button>
+          </div>
+        </article>
+      </section>
 
-            <!-- Apps Tab -->
-            <section id="apps" class="tab-content">
-                <div class="toolbar">
-                    <input type="text" id="search-apps" placeholder="搜索应用...">
-                    <select id="filter-apps">
-                        <option value="all">全部应用</option>
-                        <option value="user">仅用户应用</option>
-                        <option value="system">仅系统应用</option>
-                        <option value="compiled">仅已编译</option>
-                        <option value="uncompiled">仅未编译</option>
-                        <option value="needs-recompile">需要重新编译</option>
-                    </select>
-                    <select id="page-size">
-                        <option value="20">每页 20 条</option>
-                        <option value="50" selected>每页 50 条</option>
-                        <option value="100">每页 100 条</option>
-                    </select>
-                    <button id="refresh-apps" class="btn btn-secondary">刷新</button>
-                </div>
+      <section id="tasks" class="panel">
+        <article class="card">
+          <h3>手动入队</h3>
+          <label>包名 <input type="text" id="enqueue-package" placeholder="com.example.app"></label>
+          <label>来源
+            <select id="enqueue-source">
+              <option value="manual">manual</option>
+              <option value="event">event</option>
+              <option value="schedule">schedule</option>
+              <option value="boot">boot</option>
+            </select>
+          </label>
+          <button id="enqueue-task" class="btn">入队</button>
+        </article>
 
-                <div class="select-all-bar">
-                    <input type="checkbox" id="select-all-apps">
-                    <label for="select-all-apps">全选（当前页）</label>
-                    <button id="compile-selected" class="btn btn-primary btn-sm">编译选中</button>
-                    <span id="selection-count" style="margin-left: auto; color: var(--text-secondary);"></span>
-                </div>
+        <article class="card">
+          <h3>当前队列</h3>
+          <pre id="queue-status" class="output">-</pre>
+          <button id="refresh-queue" class="btn">刷新队列</button>
+        </article>
+      </section>
 
-                <div id="apps-list" class="apps-list">
-                    <p class="loading">加载应用中...</p>
-                </div>
+      <section id="events" class="panel">
+        <article class="card">
+          <h3>任务历史 / 事件流</h3>
+          <pre id="history-output" class="output">-</pre>
+          <button id="refresh-history" class="btn">刷新历史</button>
+        </article>
+      </section>
 
-                <div class="pagination">
-                    <button id="prev-page" class="btn btn-sm btn-secondary" disabled>上一页</button>
-                    <span id="page-info">第 1 页，共 1 页</span>
-                    <button id="next-page" class="btn btn-sm btn-secondary" disabled>下一页</button>
-                </div>
-            </section>
+      <section id="logs" class="panel">
+        <article class="card">
+          <h3>运行日志</h3>
+          <pre id="logs-output" class="output">-</pre>
+          <button id="refresh-logs" class="btn">刷新日志</button>
+        </article>
+      </section>
+    </main>
+  </div>
 
-            <!-- Schedule Tab -->
-            <section id="schedule" class="tab-content">
-                <div class="card">
-                    <h2>计划编译任务</h2>
+  <div id="toast" class="toast"></div>
 
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="schedule-enabled">
-                            启用计划任务
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="schedule-cron">Cron 表达式</label>
-                        <input type="text" id="schedule-cron" placeholder="0 2 * * *" value="0 2 * * *">
-                        <small>格式：分钟 小时 日 月 星期（例如："0 2 * * *" = 每天凌晨 2 点）</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label>下次运行时间</label>
-                        <p id="next-run-time">-</p>
-                    </div>
-
-                    <button id="save-schedule" class="btn btn-primary">保存计划</button>
-                    <button id="trigger-now" class="btn btn-secondary">立即执行</button>
-                </div>
-            </section>
-
-            <!-- Config Tab -->
-            <section id="config" class="tab-content">
-                <div class="card">
-                    <h2>配置</h2>
-
-                    <div class="form-group">
-                        <label for="default-mode">默认编译模式</label>
-                        <select id="default-mode">
-                            <option value="speed">速度模式（平衡）</option>
-                            <option value="verify">验证模式（最快）</option>
-                            <option value="speed-profile">速度配置文件模式（优化）</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="skip-compiled">
-                            跳过已编译的应用
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="detect-mode-reset">
-                            检测更新后的模式重置
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="compile-on-boot">
-                            开机时编译（推荐）
-                        </label>
-                        <small>设备启动后自动编译应用</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="compile-user-apps">
-                            编译第三方应用
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="compile-system-apps">
-                            编译系统应用
-                        </label>
-                        <small>开启后 Apps 列表可显示系统应用</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="log-level">日志级别</label>
-                        <select id="log-level">
-                            <option value="DEBUG">调试</option>
-                            <option value="INFO">信息</option>
-                            <option value="WARN">警告</option>
-                            <option value="ERROR">错误</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="parallel-jobs">并行任务数</label>
-                        <input type="number" id="parallel-jobs" min="1" max="5" value="2">
-                    </div>
-
-                    <button id="save-config" class="btn btn-primary">保存配置</button>
-                    <button id="reset-config" class="btn btn-secondary">重置为默认</button>
-                </div>
-
-                <div class="card">
-                    <h2>高级操作</h2>
-                    <button id="un-compile-all" class="btn btn-danger">清除所有编译</button>
-                </div>
-            </section>
-
-            <!-- Logs Tab -->
-            <section id="logs" class="tab-content">
-                <div class="toolbar">
-                    <select id="log-level-filter">
-                        <option value="all">全部级别</option>
-                        <option value="ERROR">仅错误</option>
-                        <option value="WARN">警告及错误</option>
-                        <option value="INFO">信息及以上</option>
-                    </select>
-                    <button id="refresh-logs" class="btn btn-secondary">刷新</button>
-                    <button id="download-logs" class="btn btn-secondary">下载</button>
-                    <button id="clear-logs" class="btn btn-danger">清空日志</button>
-                </div>
-
-                <div class="logs-container">
-                    <pre id="logs-content">加载日志中...</pre>
-                </div>
-            </section>
-        </main>
-    </div>
-
-    <div id="toast" class="toast"></div>
-
-    <script type="module">
-        import { exec } from 'https://cdn.jsdelivr.net/npm/kernelsu@latest/index.js';
-        window.exec = exec;
-    </script>
-    <script src="js/app.js"></script>
+  <script src="js/api-client.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

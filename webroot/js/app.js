@@ -1,899 +1,161 @@
-// Dex2Oat Manager - Main Application JavaScript
-// OPTIMIZED with better error handling and debugging
+(function () {
+  const toastEl = document.getElementById('toast');
 
-// Module paths
-const MODULE_DIR = '/data/adb/modules/dexoat_ks';
-const SCRIPTS_DIR = `${MODULE_DIR}/scripts`;
-const CONFIGS_DIR = `${MODULE_DIR}/configs`;
-const LOGS_DIR = `${MODULE_DIR}/logs`;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2200);
+  }
 
-// Global state
-let filteredApps = [];
-let selectedApps = new Set();
-let currentTab = 'dashboard';
-let currentPage = 1;
-let pageSize = 50;
-let isLoading = false;
-let execAvailable = false;
-let compileSystemAppsEnabled = false;
-let compileScopeLoaded = false;
-let totalApps = -1;
-let hasMoreApps = false;
-
-// Track loaded state for each tab
-let tabLoaded = {
-    dashboard: false,
-    apps: false,
-    schedule: false,
-    config: false,
-    logs: false
-};
-
-// Track loading state to prevent concurrent loads
-let tabLoading = {
-    dashboard: false,
-    apps: false,
-    schedule: false,
-    config: false,
-    logs: false
-};
-
-// Track last load time for each tab (to avoid too frequent refresh)
-let tabLoadTime = {
-    dashboard: 0,
-    apps: 0,
-    schedule: 0,
-    config: 0,
-    logs: 0
-};
-
-// Minimum time between background refreshes (30 seconds)
-const BACKGROUND_REFRESH_INTERVAL = 30000;
-
-// Utility functions
-function showToast(message, duration = 3000) {
-    const toast = document.getElementById('toast');
-    if (toast) {
-        toast.textContent = message;
-        toast.classList.add('show');
-        setTimeout(() => {
-            toast.classList.remove('show');
-        }, duration);
-    } else {
-        console.log('TOAST:', message);
-    }
-}
-
-function logDebug(message) {
-    console.log(`[DEBUG] ${message}`);
-}
-
-function logError(message) {
-    console.error(`[错误] ${message}`);
-    showToast(message);
-}
-
-async function execCommand(command) {
-    logDebug(`Executing: ${command}`);
-
-    try {
-        if (!window.exec || typeof window.exec !== 'function') {
-            logError('exec function not available');
-            return { errno: -1, stdout: '', stderr: 'exec not available' };
-        }
-
-        const result = await window.exec(command);
-
-        if (result.errno !== 0) {
-            logError(`Command failed: ${result.stderr || result.stdout || 'Unknown error'}`);
-        }
-
-        return result;
-    } catch (error) {
-        logError(`Command exception: ${error.message}`);
-        return { errno: -1, stdout: '', stderr: error.message };
-    }
-}
-
-// Debounce function for search
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-async function refreshCompileScope() {
-    if (compileScopeLoaded) return;
-    const result = await execCommand(`cat ${CONFIGS_DIR}/dexoat.conf`);
-    if (result.errno !== 0) return;
-
-    const lines = result.stdout.split('\n');
-    const compileSystemApps = lines.find(l => l.startsWith('compile_system_apps='))?.split('=')[1] || 'false';
-    compileSystemAppsEnabled = compileSystemApps === 'true';
-    compileScopeLoaded = true;
-}
-function escapeShellArg(value) {
-    return "'" + String(value).replace(/'/g, "'\"'\"'") + "'";
-}
-
-function getTypeForFilter(filter) {
-    if (filter === 'user') return 'user';
-    if (filter === 'system') return 'system';
-    return 'config';
-}
-
-// Tab switching
-document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-        const tabName = tab.dataset.tab;
-
-        // Update UI immediately for instant feedback
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  function bindTabs() {
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const name = tab.dataset.tab;
+        document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
         tab.classList.add('active');
-
-        document.querySelectorAll('.tab-content').forEach(content => {
-            content.classList.remove('active');
-        });
-        document.getElementById(tabName).classList.add('active');
-
-        currentTab = tabName;
-
-        // Load data asynchronously after UI update
-        // Use setTimeout to allow the browser to render the tab switch first
-        setTimeout(() => {
-            const now = Date.now();
-
-            // Lazy load tab data - only load if not loaded yet
-            if (tabName === 'dashboard') {
-                if (!tabLoaded.dashboard) {
-                    loadDashboard(false);
-                } else if (!tabLoading.dashboard && (now - tabLoadTime.dashboard > BACKGROUND_REFRESH_INTERVAL)) {
-                    loadDashboard(true);
-                }
-            }
-            if (tabName === 'apps') {
-                if (!tabLoaded.apps) {
-                    loadApps(false);
-                } else if (!tabLoading.apps && (now - tabLoadTime.apps > BACKGROUND_REFRESH_INTERVAL)) {
-                    loadApps(true);
-                }
-            }
-            if (tabName === 'schedule') {
-                if (!tabLoaded.schedule) {
-                    loadSchedule(false);
-                } else if (!tabLoading.schedule && (now - tabLoadTime.schedule > BACKGROUND_REFRESH_INTERVAL)) {
-                    loadSchedule(true);
-                }
-            }
-            if (tabName === 'config') {
-                if (!tabLoaded.config) {
-                    loadConfig(false);
-                } else if (!tabLoading.config && (now - tabLoadTime.config > BACKGROUND_REFRESH_INTERVAL)) {
-                    loadConfig(true);
-                }
-            }
-            if (tabName === 'logs') {
-                if (!tabLoaded.logs) {
-                    loadLogs(false);
-                } else if (!tabLoading.logs && (now - tabLoadTime.logs > BACKGROUND_REFRESH_INTERVAL)) {
-                    loadLogs(true);
-                }
-            }
-        }, 0);
+        document.getElementById(name).classList.add('active');
+      });
     });
-});
+  }
 
-// Dashboard functions
-async function loadDashboard(background = false) {
-    // Prevent concurrent loads
-    if (tabLoading.dashboard) return;
-    tabLoading.dashboard = true;
+  async function refreshOverview() {
+    try {
+      const queue = await window.DexoatApi.callApi('queue_status');
+      const history = await window.DexoatApi.callApi('task_history', { page: 1, size: 1 });
+
+      document.getElementById('queue-count').textContent = String(queue.data.count || 0);
+
+      const first = (history.data.items || [])[0];
+      document.getElementById('last-task').textContent = first
+        ? `${first.package} (${first.source})`
+        : '暂无';
+    } catch (err) {
+      toast(`总览加载失败: ${err.message}`);
+    }
+  }
+
+  async function loadStrategy() {
+    try {
+      const resp = await window.DexoatApi.callApi('get_config');
+      const cfg = resp.data || {};
+      document.getElementById('global-enabled').checked = cfg.global_enabled === 'true';
+      document.getElementById('default-mode').value = cfg.default_mode || 'speed';
+    } catch (err) {
+      toast(`策略加载失败: ${err.message}`);
+    }
+  }
+
+  async function saveStrategy() {
+    const enabled = document.getElementById('global-enabled').checked ? 'true' : 'false';
+    const mode = document.getElementById('default-mode').value;
 
     try {
-        // Show loading state immediately for better UX
-        if (!background) {
-            const totalAppsEl = document.getElementById('total-apps');
-            const compiledAppsEl = document.getElementById('compiled-apps');
-            const needsRecompileEl = document.getElementById('needs-recompile');
-            const pendingAppsEl = document.getElementById('pending-apps');
-
-            if (totalAppsEl) totalAppsEl.textContent = '...';
-            if (compiledAppsEl) compiledAppsEl.textContent = '...';
-            if (needsRecompileEl) needsRecompileEl.textContent = '...';
-            if (pendingAppsEl) pendingAppsEl.textContent = '...';
-        }
-
-        const result = await execCommand(`sh ${SCRIPTS_DIR}/get_apps.sh`);
-
-        logDebug(`get_apps.sh 结果: 错误码=${result.errno}, 输出长度=${result.stdout?.length || 0}`);
-
-        if (result.errno !== 0) {
-            if (!background) logError('加载仪表盘数据失败');
-            return;
-        }
-
-        if (!result.stdout || result.stdout.trim() === '') {
-            if (!background) logError('get_apps.sh 返回空响应');
-            return;
-        }
-
-        let data;
-        try {
-            data = JSON.parse(result.stdout);
-        } catch (e) {
-            if (!background) logError(`JSON 解析错误: ${e.message}`);
-            logDebug(`响应内容: ${result.stdout.substring(0, 200)}...`);
-            return;
-        }
-
-        const dashboardApps = data.apps || [];
-
-        // Update stats
-        const total = dashboardApps.length;
-        const compiled = dashboardApps.filter(a => a.isCompiled === true || a.isCompiled === 'true').length;
-        const needsRecompile = dashboardApps.filter(a => a.needsRecompile === true || a.needsRecompile === 'true').length;
-        const pending = total - compiled;
-
-        // Update DOM with actual values
-        const totalAppsEl = document.getElementById('total-apps');
-        const compiledAppsEl = document.getElementById('compiled-apps');
-        const needsRecompileEl = document.getElementById('needs-recompile');
-        const pendingAppsEl = document.getElementById('pending-apps');
-
-        if (totalAppsEl) totalAppsEl.textContent = total;
-        if (compiledAppsEl) compiledAppsEl.textContent = compiled;
-        if (needsRecompileEl) needsRecompileEl.textContent = needsRecompile;
-        if (pendingAppsEl) pendingAppsEl.textContent = pending;
-
-        await loadScheduleInfo(background);
-
-        tabLoaded.dashboard = true;
-        tabLoadTime.dashboard = Date.now();
-        logDebug(`仪表盘已加载: ${total} 个应用`);
-
-        if (background) {
-            logDebug('仪表盘数据已在后台刷新');
-        }
-    } catch (error) {
-        if (!background) logError(`加载仪表盘时出错: ${error.message}`);
-    } finally {
-        tabLoading.dashboard = false;
+      await window.DexoatApi.callApi('set_config', { key: 'global_enabled', value: enabled });
+      await window.DexoatApi.callApi('set_config', { key: 'default_mode', value: mode });
+      toast('策略已保存');
+    } catch (err) {
+      toast(`策略保存失败: ${err.message}`);
     }
-}
+  }
 
-async function loadScheduleInfo(background = false) {
-    try {
-        const result = await execCommand(`cat ${CONFIGS_DIR}/dexoat.conf`);
-        if (result.errno === 0) {
-            const lines = result.stdout.split('\n');
-            const scheduleLine = lines.find(l => l.startsWith('schedule='));
-            const enabledLine = lines.find(l => l.startsWith('schedule_enabled='));
-
-            const schedule = scheduleLine ? scheduleLine.split('=')[1] : 'Not set';
-            const enabled = enabledLine ? enabledLine.split('=')[1] : 'false';
-
-            const scheduleDisplay = document.getElementById('schedule-display');
-            const schedulerStatus = document.getElementById('scheduler-status');
-
-            if (scheduleDisplay) scheduleDisplay.textContent = `${schedule} (${enabled === 'true' ? 'Enabled' : 'Disabled'})`;
-            if (schedulerStatus) schedulerStatus.textContent = enabled === 'true' ? 'Running' : 'Disabled';
-        }
-    } catch (error) {
-        if (!background) logError(`加载错误 schedule info: ${error.message}`);
-    }
-}
-
-// Apps functions with pagination
-async function loadApps(background = false) {
-    // Prevent concurrent loads
-    if (tabLoading.apps) return;
-    tabLoading.apps = true;
-
-    // If background and current tab is not apps, skip
-    if (background && currentTab !== 'apps') {
-        tabLoading.apps = false;
-        return;
-    }
-
-    await refreshCompileScope();
-
-    try {
-        const container = document.getElementById('apps-list');
-        const filter = document.getElementById('filter-apps')?.value || 'all';
-        const searchTerm = document.getElementById('search-apps')?.value || '';
-        const type = getTypeForFilter(filter);
-
-        if (type === 'system' && !compileSystemAppsEnabled) {
-            filteredApps = [];
-            totalApps = 0;
-            hasMoreApps = false;
-            if (container && !background) {
-                container.innerHTML = '<p class="loading">系统应用未启用（请在配置中开启）</p>';
-            }
-            updatePagination();
-            return;
-        }
-
-        if (container && !background) {
-            container.innerHTML = '<p class="loading">加载应用中 (this may take a moment)...</p>';
-        }
-
-        const offset = (currentPage - 1) * pageSize;
-        const cmd = [
-            `sh ${SCRIPTS_DIR}/get_apps.sh`,
-            `--type ${type}`,
-            `--filter ${filter}`,
-            `--offset ${offset}`,
-            `--limit ${pageSize}`,
-            `--search ${escapeShellArg(searchTerm)}`
-        ].join(' ');
-
-        const result = await execCommand(cmd);
-
-        logDebug(`loadApps result: errno=${result.errno}`);
-
-        if (result.errno !== 0) {
-            if (container && !background) {
-                container.innerHTML = `<p class="loading" style="color: var(--danger-color)">加载应用失败<br><small>${result.stderr || 'Unknown error'}</small></p>`;
-            }
-            return;
-        }
-
-        if (!result.stdout || result.stdout.trim() === '') {
-            if (container && !background) {
-                container.innerHTML = '<p class="loading">未收到服务器数据</p>';
-            }
-            return;
-        }
-
-        let data;
-        try {
-            data = JSON.parse(result.stdout);
-        } catch (e) {
-            if (!background) {
-                logError(`JSON parse error: ${e.message}`);
-                logDebug(`响应: ${result.stdout.substring(0, 500)}...`);
-                if (container) {
-                    container.innerHTML = `<p class="loading" style="color: var(--danger-color)">解析应用数据失败<br><small>${e.message}</small></p>`;
-                }
-            }
-            return;
-        }
-
-        filteredApps = data.apps || [];
-        totalApps = typeof data.total === 'number' ? data.total : -1;
-        hasMoreApps = data.hasMore === true;
-
-        if (!background) {
-            showToast(`已加载 ${filteredApps.length} 个应用`);
-        }
-        logDebug(`已加载 ${filteredApps.length} 个应用`);
-
-        renderPage();
-        updatePagination();
-        tabLoaded.apps = true;
-        tabLoadTime.apps = Date.now();
-
-        if (background) {
-            logDebug('应用数据已在后台刷新');
-        }
-    } catch (error) {
-        if (!background) {
-            logError(`加载应用时出错: ${error.message}`);
-            if (document.getElementById('apps-list')) {
-                document.getElementById('apps-list').innerHTML = `<p class="loading" style="color: var(--danger-color)">错误: ${error.message}</p>`;
-            }
-        }
-    } finally {
-        tabLoading.apps = false;
-    }
-}
-
-function filterAndRenderApps() {
-    currentPage = 1;
-    loadApps(false);
-}
-
-function renderPage() {
-    renderAppsList(filteredApps);
-}
-
-function renderAppsList(appsToRender) {
-    const container = document.getElementById('apps-list');
-
-    if (!container) return;
-
-    if (appsToRender.length === 0) {
-        const filter = document.getElementById('filter-apps')?.value || 'all';
-        if (filter === 'system' && !compileSystemAppsEnabled) {
-            container.innerHTML = '<p class="loading">系统应用未启用（请在配置中开启）</p>';
-            return;
-        }
-        container.innerHTML = '<p class="loading">未找到应用</p>';
-        return;
-    }
-
-    container.innerHTML = appsToRender.map(app => `
-        <div class="app-card ${selectedApps.has(app.packageName) ? 'selected' : ''}">
-            <input type="checkbox"
-                   class="app-checkbox"
-                   data-package="${app.packageName}"
-                   ${selectedApps.has(app.packageName) ? 'checked' : ''}>
-            <div class="app-icon">📱</div>
-            <div class="app-info">
-                <div class="app-name">${escapeHtml(app.packageName)}</div>
-            </div>
-            <div class="app-status">
-                ${getStatusBadge(app)}
-            </div>
-            <div class="app-actions">
-                <button class="btn btn-sm btn-secondary"
-                        onclick="window.compileApp('${app.packageName}', '${app.desiredMode}')">
-                    编译
-                </button>
-            </div>
-        </div>
-    `).join('');
-
-    // Add event listeners to checkboxes
-    container.querySelectorAll('.app-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('change', (e) => {
-            const package = e.target.dataset.package;
-            if (e.target.checked) {
-                selectedApps.add(package);
-            } else {
-                selectedApps.delete(package);
-            }
-            updateSelectionCount();
-        });
-    });
-}
-
-function getStatusBadge(app) {
-    const isCompiled = app.isCompiled === true || app.isCompiled === 'true';
-    const needsRecompile = app.needsRecompile === true || app.needsRecompile === 'true';
-    const compileMode = app.compileMode || 'none';
-
-    if (needsRecompile) {
-        return '<span class="status-badge status-needs-recompile">Needs Recompile</span>';
-    }
-    if (isCompiled) {
-        // Show compilation mode with badge
-        return `<span class="status-badge status-compiled">${getCompileModeLabel(compileMode)}</span>`;
-    }
-    return '<span class="status-badge status-uncompiled">Uncompiled</span>';
-}
-
-function getCompileModeLabel(mode) {
-    const modeLabels = {
-        'speed': 'Speed ⚡',
-        'verify': 'Verify ✓',
-        'speed-profile': 'Speed Profile 🚀',
-        'quicken': 'Quicken',
-        'everything': 'Everything'
-    };
-    return modeLabels[mode] || mode;
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function updatePagination() {
-    const totalPages = totalApps >= 0 ? Math.max(1, Math.ceil(totalApps / pageSize)) : -1;
-    const pageInfo = document.getElementById('page-info');
-    const prevBtn = document.getElementById('prev-page');
-    const nextBtn = document.getElementById('next-page');
-
-    if (pageInfo) {
-        pageInfo.textContent = totalPages >= 0
-            ? `第 ${currentPage} 页，共 ${totalPages} 页`
-            : `第 ${currentPage} 页`;
-    }
-    if (prevBtn) prevBtn.disabled = currentPage <= 1;
-    if (nextBtn) {
-        if (totalPages >= 0) {
-            nextBtn.disabled = currentPage >= totalPages;
-        } else {
-            nextBtn.disabled = !hasMoreApps;
-        }
-    }
-}
-
-function updateSelectionCount() {
-    const countEl = document.getElementById('selection-count');
-    if (countEl) {
-        countEl.textContent = `${selectedApps.size} 已选择`;
-    }
-}
-
-// Pagination controls
-document.getElementById('prev-page')?.addEventListener('click', () => {
-    if (currentPage > 1) {
-        currentPage--;
-        loadApps(false);
-    }
-});
-
-document.getElementById('next-page')?.addEventListener('click', () => {
-    const totalPages = totalApps >= 0 ? Math.max(1, Math.ceil(totalApps / pageSize)) : -1;
-    if ((totalPages >= 0 && currentPage < totalPages) || (totalPages < 0 && hasMoreApps)) {
-        currentPage++;
-        loadApps(false);
-    }
-});
-
-document.getElementById('page-size')?.addEventListener('change', (e) => {
-    pageSize = parseInt(e.target.value, 10);
-    currentPage = 1;
-    loadApps(false);
-});
-
-// Filter and search with debounce
-document.getElementById('search-apps')?.addEventListener('input',
-    debounce(() => filterAndRenderApps(), 300)
-);
-
-document.getElementById('filter-apps')?.addEventListener('change', () => filterAndRenderApps());
-
-// Select all on current page
-document.getElementById('select-all-apps')?.addEventListener('change', (e) => {
-    const pageApps = filteredApps;
-
-    pageApps.forEach(app => {
-        if (e.target.checked) {
-            selectedApps.add(app.packageName);
-        } else {
-            selectedApps.delete(app.packageName);
-        }
-    });
-
-    renderPage();
-    updateSelectionCount();
-});
-
-// 编译 app
-window.compileApp = async function(packageName, mode) {
-    showToast(`Compiling ${packageName}...`);
-    logDebug(`Compiling ${packageName} with mode ${mode}`);
-
-    const result = await execCommand(`sh ${SCRIPTS_DIR}/compile_app.sh '${packageName}' '${mode}'`);
-
-    if (result.errno === 0) {
-        showToast(`成功编译 ${packageName}`);
-        logDebug(`编译d ${packageName} successfully`);
-    } else {
-        showToast(`编译失败 ${packageName}`);
-        logError(`编译失败 ${packageName}: ${result.stderr || result.stdout}`);
-    }
-};
-
-// 编译 selected
-document.getElementById('compile-selected')?.addEventListener('click', async () => {
-    if (selectedApps.size === 0) {
-        showToast('未选择应用');
-        return;
-    }
-
-    if (!confirm(`编译 ${selectedApps.size} 已选择 apps?`)) {
-        return;
-    }
-
-    showToast('正在编译选中应用...');
-    const defaultMode = document.getElementById('default-mode')?.value || 'speed';
-
-    let compiled = 0;
-    let failed = 0;
-
-    for (const package of selectedApps) {
-        const result = await execCommand(`sh ${SCRIPTS_DIR}/compile_app.sh '${package}' '${defaultMode}'`);
-        if (result.errno === 0) {
-            compiled++;
-        } else {
-            failed++;
-        }
-    }
-
-    showToast(`已编译: ${compiled}, 失败: ${failed}`);
-    selectedApps.clear();
-    updateSelectionCount();
-});
-
-// 编译 all
-document.getElementById('compile-all')?.addEventListener('click', async () => {
-    if (!confirm('编译 all uncompiled apps? 这可能需要一段时间.')) {
-        return;
-    }
-
-    showToast('开始批量编译...');
-    logDebug('开始批量编译');
-
-    const result = await execCommand(`sh ${SCRIPTS_DIR}/compile_all.sh manual`);
-
-    if (result.errno === 0) {
-        showToast('编译已开始');
-        logDebug('编译已开始 successfully');
-    } else {
-        showToast('启动编译失败');
-        logError(`启动编译失败: ${result.stderr || result.stdout}`);
-    }
-});
-
-// Schedule functions
-async function loadSchedule(background = false) {
-    // Prevent concurrent loads
-    if (tabLoading.schedule) return;
-    tabLoading.schedule = true;
-
-    // If background and current tab is not schedule, skip
-    if (background && currentTab !== 'schedule') {
-        tabLoading.schedule = false;
-        return;
+  async function upsertRule() {
+    const pkg = document.getElementById('rule-package').value.trim();
+    const mode = document.getElementById('rule-mode').value;
+    if (!pkg) {
+      toast('请输入包名');
+      return;
     }
 
     try {
-        const result = await execCommand(`cat ${CONFIGS_DIR}/dexoat.conf`);
-        if (result.errno === 0) {
-            const lines = result.stdout.split('\n');
-
-            const schedule = lines.find(l => l.startsWith('schedule='))?.split('=')[1] || '0 2 * * *';
-            const enabled = lines.find(l => l.startsWith('schedule_enabled='))?.split('=')[1] || 'false';
-            const compileOnBoot = lines.find(l => l.startsWith('compile_on_boot='))?.split('=')[1] || 'true';
-
-            document.getElementById('schedule-cron').value = schedule;
-            document.getElementById('schedule-enabled').checked = enabled === 'true';
-        }
-        tabLoaded.schedule = true;
-        tabLoadTime.schedule = Date.now();
-        if (background) {
-            logDebug('计划数据已在后台刷新 in background');
-        }
-    } catch (error) {
-        if (!background) logError(`加载错误 schedule: ${error.message}`);
-    } finally {
-        tabLoading.schedule = false;
+      await window.DexoatApi.callApi('upsert_rule', { package: pkg, mode, enabled: 'true' });
+      toast('规则已更新');
+    } catch (err) {
+      toast(`规则更新失败: ${err.message}`);
     }
-}
+  }
 
-document.getElementById('save-schedule')?.addEventListener('click', async () => {
-    const cron = document.getElementById('schedule-cron')?.value || '0 2 * * *';
-    const enabled = document.getElementById('schedule-enabled')?.checked;
-
-    await execCommand(`sed -i 's/^schedule=.*/schedule=${cron}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^schedule_enabled=.*/schedule_enabled=${enabled}/' ${CONFIGS_DIR}/dexoat.conf`);
-
-    showToast('计划已保存');
-    logDebug('计划已保存');
-
-    await execCommand('pkill -f dexoat_ks');
-    await execCommand(`sh ${MODULE_DIR}/service.sh &`);
-
-    loadScheduleInfo();
-});
-
-document.getElementById('trigger-now')?.addEventListener('click', async () => {
-    if (!confirm('立即执行计划编译？?')) {
-        return;
-    }
-
-    showToast('开始计划编译...');
-    await execCommand(`sh ${SCRIPTS_DIR}/compile_all.sh scheduled`);
-    showToast('编译已开始');
-});
-
-// Config functions
-async function loadConfig(background = false) {
-    // Prevent concurrent loads
-    if (tabLoading.config) return;
-    tabLoading.config = true;
-
-    // If background and current tab is not config, skip
-    if (background && currentTab !== 'config') {
-        tabLoading.config = false;
-        return;
+  async function deleteRule() {
+    const pkg = document.getElementById('rule-package').value.trim();
+    if (!pkg) {
+      toast('请输入包名');
+      return;
     }
 
     try {
-        const result = await execCommand(`cat ${CONFIGS_DIR}/dexoat.conf`);
-        if (result.errno === 0) {
-            const lines = result.stdout.split('\n');
-
-            const defaultMode = lines.find(l => l.startsWith('default_mode='))?.split('=')[1] || 'speed';
-            const skipCompiled = lines.find(l => l.startsWith('skip_compiled='))?.split('=')[1] || 'true';
-            const detectModeReset = lines.find(l => l.startsWith('detect_mode_reset='))?.split('=')[1] || 'true';
-            const compileOnBoot = lines.find(l => l.startsWith('compile_on_boot='))?.split('=')[1] || 'true';
-            const compileSystemApps = lines.find(l => l.startsWith('compile_system_apps='))?.split('=')[1] || 'false';
-            const compileUserApps = lines.find(l => l.startsWith('compile_user_apps='))?.split('=')[1] || 'true';
-            const logLevel = lines.find(l => l.startsWith('log_level='))?.split('=')[1] || 'INFO';
-            const parallelJobs = lines.find(l => l.startsWith('parallel_jobs='))?.split('=')[1] || '2';
-
-            document.getElementById('default-mode').value = defaultMode;
-            document.getElementById('skip-compiled').checked = skipCompiled === 'true';
-            document.getElementById('detect-mode-reset').checked = detectModeReset === 'true';
-            document.getElementById('compile-on-boot').checked = compileOnBoot === 'true';
-            document.getElementById('compile-system-apps').checked = compileSystemApps === 'true';
-            document.getElementById('compile-user-apps').checked = compileUserApps === 'true';
-            document.getElementById('log-level').value = logLevel;
-            document.getElementById('parallel-jobs').value = parallelJobs;
-
-            compileSystemAppsEnabled = compileSystemApps === 'true';
-            compileScopeLoaded = true;
-        }
-        tabLoaded.config = true;
-        tabLoadTime.config = Date.now();
-        if (background) {
-            logDebug('配置数据已在后台刷新 in background');
-        }
-    } catch (error) {
-        if (!background) logError(`加载错误 config: ${error.message}`);
-    } finally {
-        tabLoading.config = false;
+      await window.DexoatApi.callApi('delete_rule', { package: pkg });
+      toast('规则已删除');
+    } catch (err) {
+      toast(`删除失败: ${err.message}`);
     }
-}
+  }
 
-document.getElementById('save-config')?.addEventListener('click', async () => {
-    const defaultMode = document.getElementById('default-mode')?.value || 'speed';
-    const skipCompiled = document.getElementById('skip-compiled')?.checked;
-    const detectModeReset = document.getElementById('detect-mode-reset')?.checked;
-    const compileOnBoot = document.getElementById('compile-on-boot')?.checked;
-    const compileSystemApps = document.getElementById('compile-system-apps')?.checked;
-    const compileUserApps = document.getElementById('compile-user-apps')?.checked;
-    const logLevel = document.getElementById('log-level')?.value || 'INFO';
-    const parallelJobs = document.getElementById('parallel-jobs')?.value || '2';
-
-    await execCommand(`sed -i 's/^default_mode=.*/default_mode=${defaultMode}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^skip_compiled=.*/skip_compiled=${skipCompiled}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^detect_mode_reset=.*/detect_mode_reset=${detectModeReset}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^compile_on_boot=.*/compile_on_boot=${compileOnBoot}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^compile_system_apps=.*/compile_system_apps=${compileSystemApps}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^compile_user_apps=.*/compile_user_apps=${compileUserApps}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^log_level=.*/log_level=${logLevel}/' ${CONFIGS_DIR}/dexoat.conf`);
-    await execCommand(`sed -i 's/^parallel_jobs=.*/parallel_jobs=${parallelJobs}/' ${CONFIGS_DIR}/dexoat.conf`);
-
-    compileSystemAppsEnabled = compileSystemApps === true;
-    compileScopeLoaded = true;
-    tabLoaded.apps = false;
-    if (currentTab === 'apps') {
-        currentPage = 1;
-        loadApps(false);
-    }
-
-    showToast('配置已保存');
-    logDebug('配置已保存');
-
-    await execCommand('pkill -f dexoat_ks');
-    await execCommand(`sh ${MODULE_DIR}/service.sh &`);
-});
-
-document.getElementById('un-compile-all')?.addEventListener('click', async () => {
-    if (!confirm('这将清除所有编译. 应用运行速度会变慢. 继续?')) {
-        return;
-    }
-
-    const result = await execCommand(`echo yes | sh ${SCRIPTS_DIR}/un_compile_all.sh`);
-
-    if (result.errno === 0) {
-        showToast('所有编译已清除. 建议重启.');
-    } else {
-        showToast('清除编译失败');
-    }
-});
-
-// Logs functions
-async function loadLogs(background = false) {
-    // Prevent concurrent loads
-    if (tabLoading.logs) return;
-    tabLoading.logs = true;
-
-    // If background and current tab is not logs, skip
-    if (background && currentTab !== 'logs') {
-        tabLoading.logs = false;
-        return;
+  async function enqueueTask() {
+    const pkg = document.getElementById('enqueue-package').value.trim();
+    const source = document.getElementById('enqueue-source').value;
+    if (!pkg) {
+      toast('请输入包名');
+      return;
     }
 
     try {
-        const filter = document.getElementById('log-level-filter')?.value || 'all';
-        let lines = 50;
-
-        const result = await execCommand(`tail -n ${lines} ${LOGS_DIR}/dexoat.log 2>/dev/null || echo "No logs available"`);
-
-        let logs = result.stdout;
-
-        if (filter !== 'all') {
-            const logLines = logs.split('\n');
-            const levels = {
-                'ERROR': ['ERROR'],
-                'WARN': ['ERROR', 'WARN'],
-                'INFO': ['ERROR', 'WARN', 'INFO']
-            };
-
-            const allowedLevels = levels[filter] || [];
-            logs = logLines.filter(line =>
-                allowedLevels.some(level => line.includes(`[${level}]`))
-            ).join('\n');
-        }
-
-        logs = logs.replace(/\[(ERROR)\]/g, '<span class="log-ERROR">[$1]</span>');
-        logs = logs.replace(/\[(WARN)\]/g, '<span class="log-WARN">[$1]</span>');
-        logs = logs.replace(/\[(INFO)\]/g, '<span class="log-INFO">[$1]</span>');
-        logs = logs.replace(/\[(DEBUG)\]/g, '<span class="log-DEBUG">[$1]</span>');
-
-        document.getElementById('logs-content').innerHTML = logs;
-        tabLoaded.logs = true;
-        tabLoadTime.logs = Date.now();
-        if (background) {
-            logDebug('Logs data refreshed in background');
-        }
-    } catch (error) {
-        if (!background) logError(`加载错误 logs: ${error.message}`);
-        document.getElementById('logs-content').textContent = `加载错误 logs: ${error.message}`;
-    } finally {
-        tabLoading.logs = false;
+      await window.DexoatApi.callApi('enqueue', { package: pkg, source });
+      toast('任务已入队');
+      await refreshQueue();
+      await refreshHistory();
+      await refreshOverview();
+    } catch (err) {
+      toast(`入队失败: ${err.message}`);
     }
-}
+  }
 
-document.getElementById('refresh-logs')?.addEventListener('click', loadLogs);
-document.getElementById('log-level-filter')?.addEventListener('change', loadLogs);
-
-document.getElementById('clear-logs')?.addEventListener('click', async () => {
-    if (!confirm('Clear all logs?')) {
-        return;
+  async function refreshQueue() {
+    try {
+      const resp = await window.DexoatApi.callApi('queue_status');
+      document.getElementById('queue-status').textContent = JSON.stringify(resp.data, null, 2);
+    } catch (err) {
+      toast(`队列加载失败: ${err.message}`);
     }
+  }
 
-    await execCommand(`> ${LOGS_DIR}/dexoat.log`);
-    showToast('日志已清空');
-    loadLogs();
-});
-
-document.getElementById('download-logs')?.addEventListener('click', async () => {
-    const result = await execCommand(`cat ${LOGS_DIR}/dexoat.log`);
-
-    if (result.errno === 0) {
-        const blob = new Blob([result.stdout], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `dexoat-${new Date().toISOString()}.log`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('日志已下载');
-    } else {
-        showToast('下载日志失败');
+  async function refreshHistory() {
+    try {
+      const resp = await window.DexoatApi.callApi('task_history', { page: 1, size: 50 });
+      document.getElementById('history-output').textContent = JSON.stringify(resp.data, null, 2);
+    } catch (err) {
+      toast(`历史加载失败: ${err.message}`);
     }
-});
+  }
 
-// Refresh buttons
-document.getElementById('refresh-dashboard')?.addEventListener('click', () => loadDashboard(false));
-document.getElementById('refresh-apps')?.addEventListener('click', () => loadApps(false));
-
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    logDebug('DOM Content Loaded');
-
-    // Check if exec is available
-    if (window.exec && typeof window.exec === 'function') {
-        execAvailable = true;
-        logDebug('exec function is available');
-
-        // Load dashboard data asynchronously after a short delay
-        // This allows the UI to render first, then load data in background
-        setTimeout(() => {
-            logDebug('Starting initial dashboard data load');
-            loadDashboard(false);
-        }, 100);
-    } else {
-        logError('exec function not available - KernelSU API may not be loaded');
-        showToast('KernelSU API not available');
+  async function refreshLogs() {
+    try {
+      const text = await window.DexoatApi.readLogs(200);
+      document.getElementById('logs-output').textContent = text;
+    } catch (err) {
+      toast(`日志加载失败: ${err.message}`);
     }
+  }
 
-    // Make compileApp global
-    window.compileApp = compileApp;
-});
+  function bindActions() {
+    document.getElementById('refresh-overview').addEventListener('click', refreshOverview);
+    document.getElementById('save-strategy').addEventListener('click', saveStrategy);
+    document.getElementById('add-rule').addEventListener('click', upsertRule);
+    document.getElementById('remove-rule').addEventListener('click', deleteRule);
+    document.getElementById('enqueue-task').addEventListener('click', enqueueTask);
+    document.getElementById('refresh-queue').addEventListener('click', refreshQueue);
+    document.getElementById('refresh-history').addEventListener('click', refreshHistory);
+    document.getElementById('refresh-logs').addEventListener('click', refreshLogs);
+  }
+
+  async function init() {
+    bindTabs();
+    bindActions();
+    await refreshOverview();
+    await loadStrategy();
+    await refreshQueue();
+    await refreshHistory();
+    await refreshLogs();
+  }
+
+  init();
+})();
